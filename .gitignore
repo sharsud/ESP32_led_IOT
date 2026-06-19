@@ -1,0 +1,23 @@
+# --- Arduino IDE Temp & Build Directories ---
+build/
+bin/
+obj/
+.externalDependencies/
+*.local.txt
+
+# --- Operating System Files ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# --- Code Editor Configurations ---
+.vscode/
+.idea/
+*.swp
+*.bak
+
+# --- Firmware & Secrets (Just in case you add them later) ---
+*.bin
+*.elf
+*.map
+secrets.h
