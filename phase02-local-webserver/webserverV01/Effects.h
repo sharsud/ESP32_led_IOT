@@ -4,7 +4,6 @@
 #include <FastLED.h>
 
 // --- Linkage to Main Framework Global State Registers ---
-extern #define MAX_LEDS
 extern CRGB targetLeds[];
 extern uint8_t gHue;
 extern uint8_t globalSpeed;
