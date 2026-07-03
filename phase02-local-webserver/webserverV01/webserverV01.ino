@@ -88,6 +88,7 @@ void handlePortalSaveRequest();
 void blendFrames();
 bool attemptWiFiConnection();
 void launchCaptivePortal();
+void handleGetKeyRequest();
 
 void setup() {
   Serial.begin(115200);
@@ -140,7 +141,8 @@ if (attemptWiFiConnection()) {
     
     // Change HTTP_GET to HTTP_ANY so this function handles both preflight and actual data
     server.on("/update", HTTP_ANY, handleWebUpdateRequest);
-    
+    server.on("/get-key", HTTP_ANY, handleGetKeyRequest);
+
     const char * headerkeys[] = {"X-API-KEY", "x-api-key"};
     server.collectHeaders(headerkeys, 2);
     
@@ -334,6 +336,23 @@ void handlePortalSaveRequest() {
   } else {
     server.send(400, "text/plain", "Bad Request: Missing SSID or Password field parameters.");
   }
+}
+
+void handleGetKeyRequest() {
+  // Always send CORS headers first so the browser allows the communication
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+
+  // If it's a preflight request, exit early with a 204 status
+  if (server.method() == HTTP_OPTIONS) {
+    server.send(204);
+    return;
+  }
+
+  // Packages the active hardware security token as a clean JSON payload
+  String jsonPayload = "{\"apiKey\":\"" + globalApiKey + "\"}";
+  server.send(200, "application/json", jsonPayload);
 }
 
 void handleWebRootRequest() {

@@ -37,6 +37,7 @@
             justify-content: center;
             align-items: center;
             padding: 20px;
+            overflow-x: hidden;
         }
 
         @keyframes flowBackground {
@@ -45,6 +46,83 @@
             100% { background-position: 0% 50%; }
         }
 
+        /* PIN Lock Overlay Screen */
+        .pin-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-gradient);
+            background-size: 300% 300%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease, visibility 0.5s;
+            padding: 20px;
+        }
+
+        .pin-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .pin-box {
+            width: 100%;
+            max-width: 360px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: var(--border-radius);
+            padding: 30px 25px;
+            box-shadow: var(--shadow-pop);
+            border: 4px solid #ffffff;
+            text-align: center;
+        }
+
+        .pin-display {
+            font-size: 2.5rem;
+            letter-spacing: 12px;
+            margin: 20px 0;
+            height: 50px;
+            color: var(--accent-primary);
+            font-weight: 800;
+        }
+
+        .pin-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .pin-btn {
+            background: #ffffff;
+            border: 3px solid #dfe6e9;
+            padding: 15px;
+            font-size: 1.5rem;
+            font-weight: 800;
+            font-family: 'Fredoka', sans-serif;
+            color: var(--text-main);
+            border-radius: 16px;
+            cursor: pointer;
+            box-shadow: 0 4px 0px #dfe6e9;
+            transition: all 0.1s ease;
+            user-select: none;
+        }
+
+        .pin-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0px 0px #dfe6e9;
+        }
+
+        .pin-btn.clear-btn {
+            color: #ff7675;
+        }
+
+        /* Core Dashboard Wrapper */
         .dashboard-container {
             width: 100%;
             max-width: 550px;
@@ -55,8 +133,16 @@
             padding: 35px 25px;
             box-shadow: var(--shadow-pop);
             border: 4px solid #ffffff;
-            transform: scale(1);
+            opacity: 0;
+            transform: scale(0.95);
             transition: var(--transition-smooth);
+            display: none;
+        }
+
+        .dashboard-container.visible {
+            display: block;
+            opacity: 1;
+            transform: scale(1);
         }
 
         header {
@@ -288,16 +374,37 @@
 </head>
 <body>
 
-<div class="dashboard-container">
+<!-- Secret PIN Entry Screen Lock Layer -->
+<div class="pin-overlay" id="pinOverlay">
+    <div class="pin-box">
+        <h2 style="font-family: 'Fredoka', sans-serif; font-size: 1.8rem; margin-bottom: 5px;">System Locked</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; font-weight: 700;">Enter System Authorization PIN</p>
+        
+        <div class="pin-display" id="pinDisplay"></div>
+        
+        <div class="pin-grid">
+            <button class="pin-btn" onclick="pressPin('1')">1</button>
+            <button class="pin-btn" onclick="pressPin('2')">2</button>
+            <button class="pin-btn" onclick="pressPin('3')">3</button>
+            <button class="pin-btn" onclick="pressPin('4')">4</button>
+            <button class="pin-btn" onclick="pressPin('5')">5</button>
+            <button class="pin-btn" onclick="pressPin('6')">6</button>
+            <button class="pin-btn" onclick="pressPin('7')">7</button>
+            <button class="pin-btn" onclick="pressPin('8')">8</button>
+            <button class="pin-btn" onclick="pressPin('9')">9</button>
+            <button class="pin-btn clear-btn" onclick="clearPin()">✖</button>
+            <button class="pin-btn" onclick="pressPin('0')">0</button>
+            <button class="pin-btn dynamic-spacer" style="visibility: hidden;"></button>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-container" id="dashboard">
     <header>
         <h1>✨ PsudoGlow 🌞</h1>
         <div class="subtitle"> LED Controller Ecosystem</div>
     </header>
 	
-	<div class="ip-config">
-		<label for="espIP">Target IP:</label>
-		<input type="text" id="espIP" value="psudoglow.local" placeholder="e.g. 192.168.1.8" onchange="dispatchParameters()">
-	</div>
 
     <div class="form-group">
         <label for="pattern" class="section-title">🎨 Select Light Animation Effect</label>
@@ -402,19 +509,74 @@
     </div>
 
     <footer>
-        Learn with Psudo Boilerplate Core Architecture v1.1
+        Learn with Psudo Boilerplate Core Architecture v1.2
     </footer>
 </div>
 
 <script>
+    const TARGET_PIN = "2095";
+    let enteredPin = "";
+    let isUnlocked = false;
+	const ip = "http://psudoglow.local/"
     // Global Storage Tracking Objects to protect and scale networking streams
     let currentSliderState = {};
     let lastSentStateString = "";
     let isFetchingKey = false;
 
+    // Handle Input Matrix logic
+    function pressPin(digit) {
+        if (isUnlocked || enteredPin.length >= 4) return;
+        enteredPin += digit;
+        updatePinDisplay();
+
+        if (enteredPin.length === 4) {
+            if (enteredPin === TARGET_PIN) {
+                unlockSystem();
+            } else {
+                // Flash Error UI Sequence
+                document.getElementById('pinDisplay').style.color = '#ff7675';
+                setTimeout(() => {
+                    clearPin();
+                    document.getElementById('pinDisplay').style.color = 'var(--accent-primary)';
+                }, 600);
+            }
+        }
+    }
+
+    function clearPin() {
+        enteredPin = "";
+        updatePinDisplay();
+    }
+
+    function updatePinDisplay() {
+        let dots = "";
+        for (let i = 0; i < enteredPin.length; i++) {
+            dots += "•";
+        }
+        document.getElementById('pinDisplay').innerText = dots;
+    }
+
+    function unlockSystem() {
+        isUnlocked = true;
+        document.getElementById('pinOverlay').classList.add('hidden');
+        document.getElementById('dashboard').classList.add('visible');
+        
+        // As soon as the pin is matched correctly, initiate the background handshake token extraction
+        getStoredApiKey();
+    }
+
+    // Capture physical keyboards numbers typing context
+    document.addEventListener('keydown', (e) => {
+        if (isUnlocked) return;
+        if (e.key >= '0' && e.key <= '9') {
+            pressPin(e.key);
+        } else if (e.key === 'Backspace' || e.key === 'Escape') {
+            clearPin();
+        }
+    });
+
     function evaluateContextualControls() {
         var patternId = parseInt(document.getElementById('pattern').value);
-        
         var cardColor = document.getElementById('wrapperColor');
         var cardSpeed = document.getElementById('wrapperSpeed');
         var cardDensity = document.getElementById('wrapperDensity');
@@ -439,12 +601,11 @@
         }
     }
 
-    // Fully automated background handshake to intercept the key before prompt execution
+    // Fully automated background handshake to intercept the key from ESP endpoint
     async function getStoredApiKey() {
         let key = localStorage.getItem('psudoglow_api_key');
         if (key) return key;
 
-        // If we are currently negotiating a fetch hook, exit context early
         if (isFetchingKey) return "";
         isFetchingKey = true;
 
@@ -466,7 +627,7 @@
                 }
             }
         } catch (error) {
-            console.error("Device verification layer offline:", error);
+            console.error("Device verification layer offline or unreachable:", error);
         }
 
         // Fallback standard security input gate
@@ -480,7 +641,6 @@
     }
 
     function dispatchParameters() {
-        var ip = document.getElementById('espIP').value.trim();
         var pStr = document.getElementById('pattern').value;
         var bStr = document.getElementById('brightness').value;
         var nStr = document.getElementById('numLeds').value;
@@ -489,7 +649,7 @@
         var sensStr = document.getElementById('audioSens').value;
         var colorHex = document.getElementById('picker').value;
         
-        // Instant fluid UI feedback metrics updates
+        // Instant updates to the values printed inside UI tags
         document.getElementById('brightnessVal').innerText = bStr;
         document.getElementById('numLedsVal').innerText = nStr;
         document.getElementById('speedVal').innerText = sStr;
@@ -497,15 +657,16 @@
         document.getElementById('audioSensVal').innerText = sensStr;
         document.getElementById('colorVal').innerText = colorHex.toUpperCase();
         
-        // Stash parameter footprint into background object mapping frame
+        // Pack state footprint object
         currentSliderState = { ip, pStr, bStr, nStr, sStr, dStr, sensStr, colorHex };
     }
 
-    // Dedicated Heartbeat sync interval at 20fps (50ms loops)
+    // Background sync heartbeat engine running decoupled loop
     setInterval(async () => {
-        const stateString = JSON.stringify(currentSliderState);
+        // Guard check: Exit early if system is locked or state has not changed
+        if (!isUnlocked) return;
         
-        // Guard check: Exit early if parameters haven't mutated
+        const stateString = JSON.stringify(currentSliderState);
         if (stateString === lastSentStateString || !currentSliderState.ip) return;
         
         lastSentStateString = stateString;
@@ -541,7 +702,7 @@
 
     window.onload = function() {
         evaluateContextualControls();
-        dispatchParameters(); // Seed baseline state definitions
+        dispatchParameters(); 
     };
 </script>
 </body>
