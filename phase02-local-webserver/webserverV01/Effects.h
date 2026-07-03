@@ -37,8 +37,9 @@ void rainbow() {
 
 void rainbowWithGlitter() { 
   rainbow(); 
-  addGlitter(globalDensity); 
+ 
   fadeToBlackBy(targetLeds, dynamicNumLeds, 20);
+    addGlitter(globalDensity);
 }
 
 void confetti() {

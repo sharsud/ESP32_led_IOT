@@ -42,6 +42,9 @@ Preferences preferences;
 WebServer server(80);
 DNSServer dnsServer;
 
+// --- Security & API Authentication ---
+String globalApiKey = "";
+
 const byte DNS_PORT = 53;
 bool isProvisionMode = false;
 String scannedNetworksHTML = "";
@@ -106,12 +109,41 @@ void setup() {
 
   // Open storage namespace "wifi-config" in Read/Write mode
   preferences.begin("wifi-config", false);
+  globalApiKey = preferences.getString("apiKey", "");
+  if (globalApiKey != "") {
+    Serial.print("Security Token Layer initialized. API Key hash loaded: ");
+    // Print out only a safe snippet of the key to the serial log for debugging
+    Serial.println(globalApiKey);
+    Serial.println(globalApiKey.substring(0, 4) + "........................" + globalApiKey.substring(28));
+  }else{
+    Serial.println("\n[!] Connected to Wi-Fi but no API Key found in persistent memory.");
+    Serial.println("[!] Generating a retrofitted security key now...");
+    
+    const char hexChars[] = "0123456789ABCDEF";
+    for (int i = 0; i < 32; i++) {
+      globalApiKey += hexChars[esp_random() % 16];
+    }
+    
+    // Commit the new key safely to flash memory so this only happens once
+    preferences.putString("apiKey", globalApiKey);
+    
+    Serial.println("==================================================================");
+    Serial.print("▶ NEW RETROFITTED API KEY GENERATED: ");
+    Serial.println(globalApiKey);
+    Serial.println("▶ Copy this key and save it in your local dashboard dashboard index.html!");
+    Serial.println("==================================================================");
 
+  }
   // Attempt connection with saved credentials
-  if (attemptWiFiConnection()) {
-    // Standard Operations Mode
+if (attemptWiFiConnection()) {
     server.on("/", HTTP_GET, handleWebRootRequest);
-    server.on("/update", HTTP_GET, handleWebUpdateRequest);
+    
+    // Change HTTP_GET to HTTP_ANY so this function handles both preflight and actual data
+    server.on("/update", HTTP_ANY, handleWebUpdateRequest);
+    
+    const char * headerkeys[] = {"X-API-KEY", "x-api-key"};
+    server.collectHeaders(headerkeys, 2);
+    
     server.begin();
     Serial.println("Asynchronous Local HTTP Web Server Layer Online.");
   } else {
@@ -268,17 +300,36 @@ void handlePortalSaveRequest() {
     String netSSID = server.arg("ssid");
     String netPass = server.arg("password");
 
-    // Commit parameters to permanent Flash Memory
+    // 1. Generate a cryptographically secure 32-character API key
+    String newApiKey = "";
+    const char hexChars[] = "0123456789ABCDEF";
+    for (int i = 0; i < 32; i++) {
+      // esp_random() utilizes hardware noise registers to create true random numbers
+      newApiKey += hexChars[esp_random() % 16];
+    }
+
+    // 2. Commit parameters to permanent Flash Memory
     preferences.putString("ssid", netSSID);
     preferences.putString("password", netPass);
+    preferences.putString("apiKey", newApiKey); // Store the generated key
 
-    String html = "<html><body style=\"background:#1a1a2e;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;\">";
-    html += "<h2>Credentials Saved Securely!</h2><p>The hardware is rebooting now to authenticate on your network.</p>";
-    html += "<p>Reconnect your device to <b>" + netSSID + "</b> and look at your Serial Monitor for the runtime IP console address.</p></body></html>";
+    // 3. Display the API key safely to the user on screen so they can copy it
+    String html = "<html><body style=\"background:#1a1a2e;color:#fff;font-family:sans-serif;text-align:center;padding:30px;\">";
+    html += "<div style=\"max-width:450px;margin:0 auto;background:#162447;padding:25px;border-radius:12px;\">";
+    html += "<h2 style=\"color:#e43f5a;\">Credentials Saved Securely!</h2>";
+    html += "<p>The hardware is rebooting to connect to your network.</p>";
+    html += "<p style=\"text-align:left;background:#0f172a;padding:15px;border-radius:6px;word-break:break-all;font-family:monospace;\">";
+    html += "<strong>YOUR SECRET API KEY:</strong><br><br><span style=\"color:#00ffcc;\">" + newApiKey + "</span>";
+    html += "</p>";
+    html += "<p style=\"font-size:0.9em;color:#8b949e;\">Copy this key! You will need to enter it into your local dashboard to authorize control commands.</p>";
+    html += "</div></body></html>";
     
     server.send(200, "text/html", html);
-    Serial.println("New Wi-Fi credentials written to Flash Storage. Executing System Restart...");
-    delay(2000);
+    Serial.println("New Wi-Fi credentials and API Key written to Flash Storage.");
+    Serial.print("Generated API Key: ");
+    Serial.println(newApiKey);
+    Serial.println("Executing System Restart...");
+    delay(4000); // Extended delay so the user has time to see/copy the key
     ESP.restart();
   } else {
     server.send(400, "text/plain", "Bad Request: Missing SSID or Password field parameters.");
@@ -372,8 +423,40 @@ String fallbackMsg = "ESP32 LED Controller Core is Online.\n\n";
 }
 
 void handleWebUpdateRequest() {
-  // // Allow requests originating from external hosted browser dashboards
-  // server.sendHeader("Access-Control-Allow-Origin", "*");
+  // 1. Always send CORS headers first so the browser is happy
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Headers", "X-API-KEY, x-api-key, Content-Type");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+
+
+  // 2. If it's a preflight request, exit early with a 204 success status
+  if (server.method() == HTTP_OPTIONS) {
+    server.send(204);
+    return;
+  }
+
+  // 3. Now handle the actual GET request authentication
+  String receivedKey = "";
+  if (server.hasHeader("X-API-KEY")) {
+    receivedKey = server.header("X-API-KEY");
+  } else if (server.hasHeader("x-api-key")) {
+    receivedKey = server.header("x-api-key");
+  }
+
+  receivedKey.trim();
+  
+  if (receivedKey == "" || receivedKey != globalApiKey) {
+    server.send(403, "text/plain", "Forbidden: Invalid or Missing API Key");
+    
+    Serial.print("⚠️ Unauthorized Attempt! Received: '");
+    Serial.print(receivedKey);
+    Serial.print("' but expected: '");
+    Serial.print(globalApiKey);
+    Serial.println("'");
+    return;
+  }
+  
+
 
   // 1. Parse Pattern ID Selection
   if (server.hasArg("p")) {
