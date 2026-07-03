@@ -89,6 +89,8 @@ void blendFrames();
 bool attemptWiFiConnection();
 void launchCaptivePortal();
 void handleGetKeyRequest();
+void handleStatusRequest();
+
 
 void setup() {
   Serial.begin(115200);
@@ -142,6 +144,7 @@ if (attemptWiFiConnection()) {
     // Change HTTP_GET to HTTP_ANY so this function handles both preflight and actual data
     server.on("/update", HTTP_ANY, handleWebUpdateRequest);
     server.on("/get-key", HTTP_ANY, handleGetKeyRequest);
+    server.on("/status", HTTP_ANY, handleStatusRequest);
 
     const char * headerkeys[] = {"X-API-KEY", "x-api-key"};
     server.collectHeaders(headerkeys, 2);
@@ -353,6 +356,32 @@ void handleGetKeyRequest() {
   // Packages the active hardware security token as a clean JSON payload
   String jsonPayload = "{\"apiKey\":\"" + globalApiKey + "\"}";
   server.send(200, "application/json", jsonPayload);
+}
+void handleStatusRequest() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+
+  if (server.method() == HTTP_OPTIONS) {
+    server.send(204);
+    return;
+  }
+
+  // Determine operational state based on brightness duty cycle
+  String stateStr = (globalBrightness > 0) ? "ON" : "OFF";
+
+  // Build an enriched JSON payload with the live state data registers
+  String json = "{";
+  json += "\"status\":\"ONLINE\",";
+  json += "\"state\":\"" + stateStr + "\",";
+  json += "\"pattern\":" + String(currentPatternIndex) + ",";
+  json += "\"brightness\":" + String(globalBrightness) + ",";
+  json += "\"speed\":" + String(globalSpeed) + ",";
+  json += "\"density\":" + String(globalDensity) + ",";
+  json += "\"numLeds\":" + String(dynamicNumLeds);
+  json += "}";
+
+  server.send(200, "application/json", json);
 }
 
 void handleWebRootRequest() {

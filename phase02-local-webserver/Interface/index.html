@@ -405,6 +405,12 @@
         <div class="subtitle"> LED Controller Ecosystem</div>
     </header>
 	
+	<div class="control-group" style="text-align: center;">
+	  <label>System Status Register</label>
+	  <span id="statusBadge" style="padding: 6px 14px; border-radius: 20px; font-weight: bold; font-family: monospace; background: #2d3748; color: #a0aec0;">
+		CONNECTING...
+	  </span>
+	</div>
 
     <div class="form-group">
         <label for="pattern" class="section-title">🎨 Select Light Animation Effect</label>
@@ -659,6 +665,7 @@
         
         // Pack state footprint object
         currentSliderState = { ip, pStr, bStr, nStr, sStr, dStr, sensStr, colorHex };
+
     }
 
     // Background sync heartbeat engine running decoupled loop
@@ -704,6 +711,50 @@
         evaluateContextualControls();
         dispatchParameters(); 
     };
+	
+	function pollDeviceStatus() {
+	  fetch('http://psudoglow.local/status', { signal: AbortSignal.timeout(1000) }) 
+		.then(response => {
+		  if (!response.ok) throw new Error("Offline");
+		  return response.json();
+		})
+		.then(data => {
+		  const badge = document.getElementById('statusBadge');
+		  
+		  // 1. Update Connection Badge
+		  if (data.state === "ON") {
+			badge.innerText = `● ONLINE : ACTIVE `;
+			badge.style.background = "#1c3d27";
+			badge.style.color = "#38a169";
+		  } else {
+			badge.innerText = "○ ONLINE: STANDBY (OFF)";
+			badge.style.background = "#2d3748";
+			badge.style.color = "#e2e8f0";
+		  }
+
+		  // 2. Sync UI Elements with Real-Time ESP32 Registers
+		  // (Prevents the UI from displaying mismatched slider values on page refresh)
+		  if(document.getElementById('pattern'))     document.getElementById('pattern').value = data.pattern;
+		  if(document.getElementById('brightness'))  document.getElementById('brightness').value = data.brightness;
+		  if(document.getElementById('speed'))       document.getElementById('speed').value = data.speed;
+		  if(document.getElementById('density'))     document.getElementById('density').value = data.density;
+		  if(document.getElementById('numLeds'))    document.getElementById('numLeds').value = data.numLeds;
+
+		  // Update text readouts next to sliders if you have them
+		  if(document.getElementById('patternVal'))    document.getElementById('patternVal').innerText = data.pattern;
+		  if(document.getElementById('brightnessVal')) document.getElementById('brightnessVal').innerText = data.brightness;
+		})
+		.catch(err => {
+		  const badge = document.getElementById('statusBadge');
+		  badge.innerText = "▼ DISCONNECTED";
+		  badge.style.background = "#4a1d1d";
+		  badge.style.color = "#e53e3e";
+		});
+	}
+
+	// Poll every 3 seconds
+	setInterval(pollDeviceStatus, 3000);
+	pollDeviceStatus();
 </script>
 </body>
 </html>
