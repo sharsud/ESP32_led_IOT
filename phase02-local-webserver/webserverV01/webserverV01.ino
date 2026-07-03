@@ -3,6 +3,7 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <Preferences.h>
+#include <ESPmDNS.h>
 
 // --- Hardware Constraints ---
 #define MAX_LEDS          300        
@@ -16,6 +17,7 @@ uint8_t currentPatternIndex = 0;
 uint8_t gHue = 0;
 uint8_t globalBrightness = 100;
 int dynamicNumLeds = 212;            
+uint8_t audioSens = 5;
 
 // --- Advanced Interactive Modifier Registers ---
 uint8_t globalSpeed = 120;   
@@ -97,7 +99,7 @@ void setup() {
   Serial.println("==================================================================");
 
   // Initialize FastLED Hardware First to show startup indicators
-  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, MAX_LEDS).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, MAX_LEDS).setCorrection(TypicalSMD5050);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 450); 
   FastLED.setBrightness(globalBrightness);
   FastLED.clear(true);
@@ -115,6 +117,11 @@ void setup() {
   } else {
     // Provisioning Mode (Captive Portal)
     launchCaptivePortal();
+  }
+  if (MDNS.begin("psudoglow")) {
+    Serial.println("▶ mDNS responder started! Target URL: http://psudoglow.local/");
+  } else {
+    Serial.println("▶ Error setting up MDNS responder!");
   }
 }
 
@@ -202,7 +209,7 @@ void launchCaptivePortal() {
 
   // Initialize soft Access Point network
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("ESP32-LED-Panel-Setup");
+  WiFi.softAP("ESP32-LED-Panel-Setup", "Password123");
   delay(100); // Give radio hardware time to stabilize
 
   // Intercept every inbound web request and map it back to the softAP IP address
@@ -365,8 +372,8 @@ String fallbackMsg = "ESP32 LED Controller Core is Online.\n\n";
 }
 
 void handleWebUpdateRequest() {
-  // Allow requests originating from external hosted browser dashboards
-  server.sendHeader("Access-Control-Allow-Origin", "*");
+  // // Allow requests originating from external hosted browser dashboards
+  // server.sendHeader("Access-Control-Allow-Origin", "*");
 
   // 1. Parse Pattern ID Selection
   if (server.hasArg("p")) {
@@ -420,6 +427,13 @@ void handleWebUpdateRequest() {
   
   if (server.hasArg("bl")) {
     pickerBlue = constrain(server.arg("bl").toInt(), 0, 255);
+  }
+
+  if (server.hasArg("sens")) {
+    int parsedSens = server.arg("sens").toInt();
+    if (parsedSens >= 1 && parsedSens <= 10) {
+      audioSens = parsedSens;
+    }
   }
   
   server.send(200, "text/plain", "OK");
@@ -490,43 +504,55 @@ void handleSerialCommunication() {
 
 void runSelectedPattern(uint8_t patternId) {
   switch (patternId) {
-    case 0:  rainbow();                   break;
-    case 1:  rainbowWithGlitter();        break;
-    case 2:  confetti();                  break;
-    case 3:  sinelon();                   break;
-    case 4:  juggle();                    break;
-    case 5:  bpm();                       break;
-    case 6:  visualize_music();           break;
-    case 7:  visualize_music_solids();    break; 
-    case 8:  visualize_music_dual_tone(); break;
-    case 9:  Fire2012();                  break;
-    case 10: pacmanGhostChase();          break;
-    case 11: oceanWaves();                break;
-    case 12: plasmaNoise();               break;
-    case 13: strobeParty();               break;
-    case 14: meteorRain();                break;
-    case 15: cyberpunkNeon();             break;
-    case 16: auroraBorealis();            break;
-    case 17: rainbowVortex();             break;
-    case 18: customPulseBreathing();      break;
-    case 19: customColorScanner();        break;
-    case 20: solidColorPicker();          break; 
-    case 21: warmFireflyShimmer();        break;
-    case 22: cozyFireplaceCrackle();      break;
-    case 23: movingPastelWave();          break;
-    case 24: organicNebulaDrift();        break;
-    case 25: loungeWineBreathing();       break;
-    case 26: kineticSandGlass();          break;
-    case 27: theatreMarquee();            break;
-    case 28: cosmicDustSupernova();       break;
-    case 29: glacialIceMelt();            break;
-    case 30: matrixDigitalRain();         break;
-    case 31: interstellarWarpDrive();     break;
-    case 32: diamondPrismShimmer();       break;
-    case 33: magmaChamberFissure();       break;
-    case 34: zenBambooForest();           break;
-    case 35: electricTeslaArc();          break;
-    case 36: tokyoNeonRain();             break;
-    default: rainbow();                   break;
+    // ========================================================================
+    // SECTION C: STANDARD CANVAS & SOLID FOUNDATIONS (First)
+    // ========================================================================
+    case 0:  solidColorPicker();          break; // ID 20 previously
+    case 1:  rainbow();                   break; // ID 0 previously
+    case 2:  rainbowVortex();             break; // ID 17 previously
+    case 3:  rainbowWithGlitter();        break; // ID 1 previously
+
+    // ========================================================================
+    // SECTION B: KINETIC PACING & SPATIAL DENSITY GENERATORS
+    // ========================================================================
+    case 4:  confetti();                  break; // ID 2 previously
+    case 5:  sinelon();                   break; // ID 3 previously
+    case 6:  bpm();                       break; // ID 5 previously
+    case 7:  juggle();                    break; // ID 4 previously
+    case 8:  Fire2012();                  break; // ID 9 previously
+    case 9:  pacmanGhostChase();          break; // ID 10 previously
+    case 10: oceanWaves();                break; // ID 11 previously
+    case 12: strobeParty();               break; // ID 13 previously
+    case 11: plasmaNoise();               break; // ID 12 previously
+    case 13: meteorRain();                break; // ID 14 previously
+    case 14: cyberpunkNeon();             break; // ID 15 previously
+    case 15: auroraBorealis();            break; // ID 16 previously
+    case 16: customPulseBreathing();      break; // ID 18 previously
+    case 17: customColorScanner();        break; // ID 19 previously
+    case 18: warmFireflyShimmer();        break; // ID 21 previously
+    case 19: cozyFireplaceCrackle();      break; // ID 22 previously
+    case 20: movingPastelWave();          break; // ID 23 previously
+    case 21: organicNebulaDrift();        break; // ID 24 previously
+    case 22: loungeWineBreathing();       break; // ID 25 previously
+    case 23: kineticSandGlass();          break; // ID 26 previously
+    case 24: theatreMarquee();            break; // ID 27 previously
+    case 25: cosmicDustSupernova();       break; // ID 28 previously
+    case 26: glacialIceMelt();            break; // ID 29 previously
+    case 27: matrixDigitalRain();         break; // ID 30 previously
+    case 28: interstellarWarpDrive();     break; // ID 31 previously
+    case 29: diamondPrismShimmer();       break; // ID 32 previously
+    case 30: magmaChamberFissure();       break; // ID 33 previously
+    case 31: zenBambooForest();           break; // ID 34 previously
+    case 32: electricTeslaArc();          break; // ID 35 previously
+    case 33: tokyoNeonRain();             break; // ID 36 previously
+
+    // ========================================================================
+    // SECTION A: ADVANCED AUDIO ANALYSIS / HARDWARE SYNC (Last)
+    // ========================================================================
+    case 34: visualize_music();           break; // ID 6 previously
+    case 35: visualize_music_solids();    break; // ID 7 previously
+    case 36: visualize_music_dual_tone(); break; // ID 8 previously
+
+    default: rainbow();          break;
   }
 }

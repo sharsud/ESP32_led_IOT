@@ -77,26 +77,40 @@ void juggle() {
 }
 
 void visualize_music() {
-  int sensor_value = analogRead(34);
+  int sensor_value = analogRead(34); // Hardware Pin[cite: 1, 3]
   if (sensor_value < MIC_LOW) {
-    sensor_value = MIC_LOW;
+    sensor_value = MIC_LOW; // Cutoff floor boundary[cite: 1]
   }
-  calculateAGC(sensor_value);
-  int targetLedCount = int(((dynamicNumLeds / dynamicMicHigh) * sensor_value) / 2);
-  smoothedLedCount = (0.15 * targetLedCount) + (0.85 * smoothedLedCount);
+  calculateAGC(sensor_value); // Baseline calculation engine[cite: 1, 3]
+  
+  // Apply our scaling factor multiplier (Normalized centered around 5)
+  float manualGainModifier = (float)audioSens / 5.0;
+  
+  // Inject the modifier safely into target active bounds mapping
+  int targetLedCount = int((((dynamicNumLeds / dynamicMicHigh) * sensor_value) / 2) * manualGainModifier);
+  
+  smoothedLedCount = (0.15 * targetLedCount) + (0.85 * smoothedLedCount); // Temporal lowpass damping filter[cite: 1, 3]
   int activeBound = (int)smoothedLedCount;
-  uint8_t noLed = uint8_t(dynamicNumLeds / 2);
+  
+  // Boundary safety clamp constraint to stop buffer array overflow risks
+  if (activeBound > (dynamicNumLeds / 2)) {
+    activeBound = (dynamicNumLeds / 2);
+  }
+  
+  uint8_t noLed = uint8_t(dynamicNumLeds / 2); // Anchor midpoint point allocation[cite: 1]
   int maxLed = noLed + activeBound;
   int minLed = noLed - activeBound;
-  fadeToBlackBy(targetLeds, 300, 255);
+  
+  fadeToBlackBy(targetLeds, dynamicNumLeds, 255); 
+  
   uint8_t localHue = gHue;
   for (int i = noLed; i >= minLed; i--) {
-    targetLeds[i] = CHSV(localHue, 255, 255);
+    if (i >= 0) { targetLeds[i] = CHSV(localHue, 255, 255); } // Lower safety buffer check[cite: 1]
     localHue += 3;
   }
   localHue = gHue;
   for (int i = noLed + 1; i < maxLed; i++) {
-    targetLeds[i] = CHSV(localHue, 255, 255);
+    if (i < dynamicNumLeds) { targetLeds[i] = CHSV(localHue, 255, 255); } // Upper safety buffer check[cite: 1]
     localHue += 3;
   }
 }
