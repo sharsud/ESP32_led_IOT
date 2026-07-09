@@ -106,7 +106,8 @@ void setup() {
 
   // Initialize FastLED Hardware First to show startup indicators
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, MAX_LEDS).setCorrection(TypicalSMD5050);
-  FastLED.setMaxPowerInVoltsAndMilliamps(5, 450); 
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, 100000); 
+  // FastLED.setMaxPowerInVoltsAndMilliamps(5, 450); 
   FastLED.setBrightness(globalBrightness);
   FastLED.clear(true);
 
