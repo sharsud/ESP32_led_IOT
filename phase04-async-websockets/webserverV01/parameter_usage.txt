@@ -1,0 +1,57 @@
+/*
+======================================================================================================
+ MASTER SERIAL COMMUNICATIONS & SLIDER PARAMETER SPECIFICATION
+======================================================================================================
+ Syntax Format: ID,Brightness,LEDCount,Speed,Density,Red,Green,Blue \n (Terminated with Newline)
+ Total Expected Fields: 1 to 8 parameters separated by commas.
+ 
+ -----------------------------------------------------------------------------------------------------
+ PARAMETER MATRIX & OPERATIONAL BOUNDARIES:
+ -----------------------------------------------------------------------------------------------------
+ 1. Pattern ID (Effect Selection)
+    - Lower Limit : 0
+    - Upper Limit : 28 
+    - Note        : Values outside 0-28 are ignored by the safety router matrix; keeps current running state.
+    
+ 2. Global Brightness
+    - Lower Limit : 0   (Completely dim / Software off)
+    - Upper Limit : 255 (Maximum hardware duty cycle)
+    - Note        : Governed globally by FastLED.setBrightness() scaling.
+    
+ 3. Active LED Count
+    - Lower Limit : 1   (Minimum singular illuminated terminal)
+    - Upper Limit : 212 (MAX_LEDS physical hardware restriction boundary limit)
+    - Note        : Dropping this value truncates tail pixels instantly to absolute black.
+    
+ 4. Global Speed
+    - Lower Limit : 0   (Ultra-slow motion or completely static scene pacing freezes)
+    - Upper Limit : 255 (Maximum kinetic update loop cycle step transitions)
+    - Note        : Dynamically scales internal time elements like oscillators, timers, and beatsin loops.
+    
+ 5. Global Density
+    - Lower Limit : 0   (Minimum spread, lowest pixel spawn rates, or complete canvas clear decay)
+    - Upper Limit : 255 (Tightest spatial compression packing or hyperactive particle generation)
+    - Note        : Custom-mapped uniquely within individual effects to control texture/frequency.
+    
+ 6. Red Channel Color Target
+    - Lower Limit : 0   (Channel completely disabled)
+    - Upper Limit : 255 (Full intensity saturation output)
+    
+ 7. Green Channel Color Target
+    - Lower Limit : 0   (Channel completely disabled)
+    - Upper Limit : 255 (Full intensity saturation output)
+    
+ 8. Blue Channel Color Target
+    - Lower Limit : 0   (Channel completely disabled)
+    - Upper Limit : 255 (Full intensity saturation output)
+    - Note        : RGB clusters must be passed together as a complete triad (all 3 parameters) to apply.
+ 
+ -----------------------------------------------------------------------------------------------------
+ PRODUCTION PRESET DIAL DIAGNOSTIC CODES:
+ -----------------------------------------------------------------------------------------------------
+  - Solid Architectural White Task Light  : 25,255,212,0,0,255,255,255
+  - Ambient Midnight Forest Fireflies     : 26,180,212,25,40,0,0,0
+  - Hyperkinetic Pastel Aurora Wave       : 28,120,212,200,15,0,0,0
+  - Soft Low-Power Warm Amber Nightlight  : 25,40,100,0,0,255,140,0
+======================================================================================================
+*/
