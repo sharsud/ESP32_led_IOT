@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ PsudoGlow | LED Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #fbc531 0%, #ff7675 50%, #74b9ff 100%);
+            --card-bg: rgba(255, 255, 255, 0.85);
+            --text-main: #2d3436;
+            --text-muted: #636e72;
+            --accent-primary: #6c5ce7;
+            --accent-secondary: #00cec9;
+            --shadow-pop: 0 12px 24px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05);
+            --border-radius: 24px;
+            --transition-smooth: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            background: var(--bg-gradient);
+            background-size: 300% 300%;
+            animation: flowBackground 15s ease infinite;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        @keyframes flowBackground {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .pin-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-gradient);
+            background-size: 300% 300%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease, visibility 0.5s;
+            padding: 20px;
+        }
+
+        .pin-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .pin-box {
+            width: 100%;
+            max-width: 360px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: var(--border-radius);
+            padding: 30px 25px;
+            box-shadow: var(--shadow-pop);
+            border: 4px solid #ffffff;
+            text-align: center;
+        }
+
+        .pin-display {
+            font-size: 2.5rem;
+            letter-spacing: 12px;
+            margin: 20px 0;
+            height: 50px;
+            color: var(--accent-primary);
+            font-weight: 800;
+        }
+
+        .pin-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .pin-btn {
+            background: #ffffff;
+            border: 3px solid #dfe6e9;
+            padding: 15px;
+            font-size: 1.5rem;
+            font-weight: 800;
+            font-family: 'Fredoka', sans-serif;
+            color: var(--text-main);
+            border-radius: 16px;
+            cursor: pointer;
+            box-shadow: 0 4px 0px #dfe6e9;
+            transition: all 0.1s ease;
+            user-select: none;
+        }
+
+        .pin-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0px 0px #dfe6e9;
+        }
+
+        .pin-btn.clear-btn {
+            color: #ff7675;
+        }
+
+        .dashboard-container {
+            width: 100%;
+            max-width: 550px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: var(--border-radius);
+            padding: 35px 25px;
+            box-shadow: var(--shadow-pop);
+            border: 4px solid #ffffff;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: var(--transition-smooth);
+            display: none;
+        }
+
+        .dashboard-container.visible {
+            display: block;
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-family: 'Fredoka', sans-serif;
+            font-weight: 700;
+            font-size: 2.5rem;
+            color: var(--text-main);
+            text-shadow: 2px 2px 0px #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .subtitle {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-top: 5px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label.section-title {
+            font-family: 'Fredoka', sans-serif;
+            font-weight: 600;
+            font-size: 1.15rem;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        select {
+            width: 100%;
+            padding: 15px;
+            font-family: inherit;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-main);
+            background: #ffffff;
+            border: 3px solid #dfe6e9;
+            border-radius: 16px;
+            outline: none;
+            cursor: pointer;
+            box-shadow: 0 4px 0px #dfe6e9;
+            transition: var(--transition-smooth);
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232d3436' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 15px center;
+            background-size: 16px;
+        }
+
+        select:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 4px 0px var(--accent-primary);
+        }
+
+        .control-card {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 6px 0px #dfe6e9;
+            border: 3px solid #dfe6e9;
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+            transition: opacity 0.35s ease, transform 0.35s ease, cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .control-card.hidden {
+            display: none !important;
+            opacity: 0;
+            transform: translateY(15px);
+        }
+
+        .control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .control-header span:first-child {
+            font-weight: 800;
+            font-size: 1.05rem;
+            color: var(--text-main);
+        }
+
+        .badge-val {
+            background: var(--accent-primary);
+            color: #ffffff;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 800;
+            font-size: 0.85rem;
+        }
+
+        .badge-val.color-preview {
+            background: #000000;
+            text-transform: uppercase;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 12px;
+            border-radius: 10px;
+            background: #dfe6e9;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--accent-primary);
+            cursor: pointer;
+            border: 4px solid #ffffff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            transition: transform 0.1s;
+        }
+
+        .picker-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 16px;
+            border: 2px dashed #dfe6e9;
+        }
+
+        .color-input-container {
+            position: relative;
+            width: 70px;
+            height: 48px;
+            overflow: hidden;
+            border-radius: 12px;
+            border: 3px solid #dfe6e9;
+            box-shadow: 0 3px 0px #dfe6e9;
+            transition: var(--transition-smooth);
+            cursor: pointer;
+        }
+
+        input[type="color"] {
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            width: 100px;
+            height: 70px;
+            border: none;
+            background: none;
+            cursor: pointer;
+        }
+
+        .picker-label-block {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .picker-title-sub {
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .picker-hint {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+
+        /* Power Toggle Layout Elements */
+        .power-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: #ffffff;
+            background: #ff7675;
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            box-shadow: 0 5px 0px #c0392b;
+            transition: all 0.1s ease;
+        }
+        .power-btn.active {
+            background: #2ecc71;
+            box-shadow: 0 5px 0px #27ae60;
+        }
+        .power-btn:active {
+            transform: translateY(3px);
+            box-shadow: none;
+        }
+
+        /* Status & Recovery Layout Engine */
+        .badge-action-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .reconnect-btn {
+            background: #ffffff;
+            border: 2px solid #dfe6e9;
+            padding: 4px 12px;
+            font-size: 0.78rem;
+            font-weight: 800;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 2px 0px #dfe6e9;
+        }
+        .reconnect-btn:active {
+            transform: translateY(1px);
+            box-shadow: none;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 25px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+
+<div class="pin-overlay" id="pinOverlay">
+    <div class="pin-box">
+        <h2 style="font-family: 'Fredoka', sans-serif; font-size: 1.8rem; margin-bottom: 5px;">System Locked</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; font-weight: 700;">Enter System Authorization PIN</p>
+        <div class="pin-display" id="pinDisplay"></div>
+        <div class="pin-grid">
+            <button class="pin-btn" onclick="pressPin('1')">1</button>
+            <button class="pin-btn" onclick="pressPin('2')">2</button>
+            <button class="pin-btn" onclick="pressPin('3')">3</button>
+            <button class="pin-btn" onclick="pressPin('4')">4</button>
+            <button class="pin-btn" onclick="pressPin('5')">5</button>
+            <button class="pin-btn" onclick="pressPin('6')">6</button>
+            <button class="pin-btn" onclick="pressPin('7')">7</button>
+            <button class="pin-btn" onclick="pressPin('8')">8</button>
+            <button class="pin-btn" onclick="pressPin('9')">9</button>
+            <button class="pin-btn clear-btn" onclick="clearPin()">✖</button>
+            <button class="pin-btn" onclick="pressPin('0')">0</button>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-container" id="dashboard">
+    <header>
+        <h1>✨ PsudoGlow 🌞</h1>
+        <div class="subtitle">LED Controller Ecosystem</div>
+    </header>
+
+    <div class="control-group" style="text-align: center; margin-bottom: 20px;">
+        <label style="font-size: 0.85rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 5px;">System Status Register</label>
+        <div class="badge-action-container">
+          <span id="statusBadge" style="padding: 6px 14px; border-radius: 20px; font-weight: bold; font-family: monospace; background: #2d3748; color: #a0aec0; display: inline-block;">
+            DISCONNECTED
+          </span>
+            <button id="manualReconnect" class="reconnect-btn" onclick="initiateWebSocket()">🔄 Reconnect Channel</button>
+        </div>
+    </div>
+
+    <!-- Feature 1: Dynamic System Power Controller Matrix -->
+    <div class="control-card">
+        <div class="control-header">
+            <span>System Hardware Power Flow</span>
+        </div>
+        <button id="powerToggleBtn" class="power-btn active" onclick="toggleSystemPower()">System Power: ON</button>
+    </div>
+
+    <div class="form-group">
+        <label for="pattern" class="section-title">🎨 Select Light Animation Effect</label>
+        <select id="pattern" onchange="evaluateContextualControls(); dispatchParameters();">
+            <optgroup label="✨ Section C: Standard & Solid Foundations">
+                <option value="0" selected>Solid Color Picker</option>
+                <option value="1">Rainbow Wave</option>
+                <option value="2">Rainbow Vortex</option>
+                <option value="3">Rainbow With Glitter</option>
+            </optgroup>
+            <optgroup label="🏃 Section B: Kinetic Pacing & Spatial Textures">
+                <option value="4">Confetti Shimmer</option>
+                <option value="5">Sinelon Plasma</option>
+                <option value="6">BPM Pulse Beats</option>
+                <option value="7">Juggle Kinetic Dots</option>
+                <option value="8">Fire 2012 Engine</option>
+                <option value="9">Pacman Ghost Chase</option>
+                <option value="10">Ocean Waves</option>
+                <option value="11">Plasma Noise Engine</option>
+                <option value="12">Strobe Party Flash</option>
+                <option value="13">Meteor Rain Cascade</option>
+                <option value="14">Cyberpunk Neon Matrix</option>
+                <option value="15">Aurora Borealis Fluid</option>
+                <option value="16">Custom Pulse Breathing</option>
+                <option value="17">Custom Color Scanner</option>
+                <option value="18">Warm Firefly Shimmer</option>
+                <option value="19">Cozy Fireplace Crackle</option>
+                <option value="20">Moving Pastel Wave</option>
+                <option value="21">Organic Nebula Drift</option>
+                <option value="22">Lounge Wine Breathing</option>
+                <option value="23">Kinetic Sand Glass</option>
+                <option value="24">Theatre Marquee Run</option>
+                <option value="25">Cosmic Dust Supernova</option>
+                <option value="26">Glacial Ice Melt</option>
+                <option value="27">Matrix Digital Rain</option>
+                <option value="28">Interstellar Warp Drive</option>
+                <option value="29">Diamond Prism Shimmer</option>
+                <option value="30">Magma Chamber Fissure</option>
+                <option value="31">Zen Bamboo Forest</option>
+                <option value="32">Electric Tesla Arc</option>
+                <option value="33">Tokyo Neon Rain</option>
+            </optgroup>
+            <optgroup label="🎵 Section A: Sound-Reactive Audio Sync">
+                <option value="34">Audio Frequency VU Meter</option>
+                <option value="35">Audio Reactive Solid Pulses</option>
+                <option value="36">Audio Dual Tone Visualizer</option>
+            </optgroup>
+        </select>
+    </div>
+
+    <div class="control-card">
+        <div class="control-header">
+            <span>Brightness Intensity</span>
+            <span class="badge-val" id="brightnessVal">128</span>
+        </div>
+        <input type="range" id="brightness" min="0" max="255" value="128" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card">
+        <div class="control-header">
+            <span>Active Pixel Count</span>
+            <span class="badge-val" id="numLedsVal">212</span>
+        </div>
+        <input type="range" id="numLeds" min="1" max="300" value="212" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card" id="wrapperColor">
+        <div class="control-header">
+            <span>Target Tone Selection</span>
+            <span class="badge-val color-preview" id="colorVal">#FF0000</span>
+        </div>
+        <div class="picker-wrapper">
+            <div class="color-input-container">
+                <input type="color" id="picker" value="#ff0000" oninput="dispatchParameters()">
+            </div>
+            <div class="picker-label-block">
+                <span class="picker-title-sub">Palette Master Swatch</span>
+                <span class="picker-hint">Click capsule area to configure color registry</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="control-card" id="wrapperSpeed">
+        <div class="control-header">
+            <span>Animation Velocity (Speed)</span>
+            <span class="badge-val" id="speedVal">120</span>
+        </div>
+        <input type="range" id="speed" min="1" max="255" value="120" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card" id="wrapperDensity">
+        <div class="control-header">
+            <span>Spatial Multiplier (Density)</span>
+            <span class="badge-val" id="densityVal">30</span>
+        </div>
+        <input type="range" id="density" min="1" max="100" value="30" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card" id="wrapperAudioSens">
+        <div class="control-header">
+            <span>Microphone Sensitivity Gain</span>
+            <span class="badge-val" id="audioSensVal">5</span>
+        </div>
+        <input type="range" id="audioSens" min="1" max="10" value="5" oninput="dispatchParameters()">
+    </div>
+
+    <footer>
+        Learn with Psudo Boilerplate Core Architecture v2.0
+    </footer>
+</div>
+
+<script>
+    let TARGET_PIN = "2095";
+    let enteredPin = "";
+    let isUnlocked = false;
+    let ip = "http://192.168.1.8/"; // Modified by native Android engine layer dynamically
+
+    let socket = null;
+    let isPowerActive = true;
+    let isFetchingKey = false;
+    let reconnectInterval = null;
+
+    // --- High-Velocity Rate Limiting (Throttle Control) Block ---
+    let throttleTimeout = null;
+
+    function sendThrottledData(dataPayload) {
+        if (!throttleTimeout) {
+            throttleTimeout = setTimeout(() => {
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify(dataPayload));
+                }
+                throttleTimeout = null;
+            }, 45); // 45ms keeps transmissions locked to a safe ~22 frames per second max
+        }
+    }
+
+    function pressPin(digit) {
+        if (isUnlocked || enteredPin.length >= 4) return;
+        enteredPin += digit;
+        updatePinDisplay();
+        if (enteredPin.length === 4) {
+            if (enteredPin === TARGET_PIN) { unlockSystem(); }
+            else {
+                document.getElementById('pinDisplay').style.color = '#ff7675';
+                setTimeout(() => {
+                    clearPin();
+                    document.getElementById('pinDisplay').style.color = 'var(--accent-primary)';
+                }, 600);
+            }
+        }
+    }
+
+    function clearPin() { enteredPin = ""; updatePinDisplay(); }
+    function updatePinDisplay() {
+        let dots = "";
+        for (let i = 0; i < enteredPin.length; i++) { dots += "•"; }
+        document.getElementById('pinDisplay').innerText = dots;
+    }
+
+    function unlockSystem() {
+        isUnlocked = true;
+        document.getElementById('pinOverlay').classList.add('hidden');
+        document.getElementById('dashboard').classList.add('visible');
+        initiateWebSocket();
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (isUnlocked) return;
+        if (e.key >= '0' && e.key <= '9') { pressPin(e.key); }
+        else if (e.key === 'Backspace' || e.key === 'Escape') { clearPin(); }
+    });
+
+    // Secure extraction layer parsing token parameters
+    async function getStoredApiKey() {
+        let key = localStorage.getItem('psudoglow_api_key');
+        if (key) return key;
+        if (isFetchingKey) return "";
+        isFetchingKey = true;
+
+        let cleanIp = ip;
+        if (!cleanIp.startsWith('http://') && !cleanIp.startsWith('https://')) { cleanIp = 'http://' + cleanIp; }
+        if (!cleanIp.endsWith('/')) { cleanIp = cleanIp + '/'; }
+
+        try {
+            const response = await fetch(cleanIp + 'get-key');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.apiKey) {
+                    key = data.apiKey.toUpperCase().trim();
+                    localStorage.setItem('psudoglow_api_key', key);
+                    isFetchingKey = false;
+                    return key;
+                }
+            }
+        } catch (error) { console.error("Key verification error:", error); }
+
+        isFetchingKey = false;
+        key = prompt("Please enter your secret ESP32 API Key to unlock controls:");
+        if (key) {
+            key = key.toUpperCase().trim();
+            localStorage.setItem('psudoglow_api_key', key);
+        }
+        return key;
+    }
+
+    // Feature 2: High-Velocity Duplex WebSocket Pipeline
+    async function initiateWebSocket() {
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+
+        const badge = document.getElementById('statusBadge');
+        badge.innerText = "CONNECTING...";
+        badge.style.background = "#2d3748";
+        badge.style.color = "#e2e8f0";
+
+        const apiKey = await getStoredApiKey();
+        if (!apiKey) return;
+
+        // Strip prefixes to evaluate base address domains accurately
+        let wsAddress = ip.replace('http://', '').replace('https://', '');
+        if (wsAddress.endsWith('/')) { wsAddress = wsAddress.slice(0, -1); }
+
+        // Secure Handshake via Query String parameters
+        socket = new WebSocket(`ws://${wsAddress}/ws?apiKey=${apiKey}`);
+
+        socket.onopen = () => {
+            console.log("WebSocket engine channel successfully bound.");
+            clearInterval(reconnectInterval);
+            reconnectInterval = null;
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                // Real-time synchronization callback structure
+                isPowerActive = data.power;
+                updatePowerButtonUI();
+
+                if(data.status === "ONLINE") {
+                    badge.innerText = isPowerActive ? "● ONLINE : ACTIVE" : "○ ONLINE: STANDBY";
+                    badge.style.background = isPowerActive ? "#1c3d27" : "#2d3748";
+                    badge.style.color = isPowerActive ? "#38a169" : "#a0aec0";
+                }
+
+                if(document.getElementById('pattern'))    document.getElementById('pattern').value = data.pattern;
+                if(document.getElementById('brightness')) document.getElementById('brightness').value = data.brightness;
+                if(document.getElementById('speed'))      document.getElementById('speed').value = data.speed;
+                if(document.getElementById('density'))    document.getElementById('density').value = data.density;
+                if(document.getElementById('numLeds'))    document.getElementById('numLeds').value = data.numLeds;
+                if(document.getElementById('audioSens'))  document.getElementById('audioSens').value = data.audioSens;
+
+                // Sync Hex target swatches directly
+                if(document.getElementById('picker')) {
+                    const hexColor = "#" + ((1 << 24) + (data.r << 16) + (data.g << 8) + data.bl).toString(16).slice(1);
+                    document.getElementById('picker').value = hexColor;
+                }
+
+                evaluateContextualControls();
+                updateDisplayStrings();
+
+            } catch(e) { console.error("Error parsing system frame data status", e); }
+        };
+
+        socket.onclose = () => {
+            badge.innerText = "▼ DISCONNECTED";
+            badge.style.background = "#4a1d1d";
+            badge.style.color = "#e53e3e";
+
+            // Automated Silent Background Reconnection Management Loop
+            if (!reconnectInterval) {
+                reconnectInterval = setInterval(initiateWebSocket, 4000);
+            }
+        };
+
+        socket.onerror = (err) => { console.error("Socket error encountered:", err); };
+    }
+
+    function toggleSystemPower() {
+        isPowerActive = !isPowerActive;
+        updatePowerButtonUI();
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ power: isPowerActive }));
+        }
+    }
+
+    function updatePowerButtonUI() {
+        const btn = document.getElementById('powerToggleBtn');
+        if (isPowerActive) {
+            btn.innerText = "System Power: ON";
+            btn.classList.add('active');
+        } else {
+            btn.innerText = "System Power: OFF";
+            btn.classList.remove('active');
+        }
+    }
+
+    // Fixed: Now processes inputs dynamically using the non-blocking throttling helper
+    function dispatchParameters() {
+        updateDisplayStrings();
+
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+        var pStr = parseInt(document.getElementById('pattern').value);
+        var bStr = parseInt(document.getElementById('brightness').value);
+        var nStr = parseInt(document.getElementById('numLeds').value);
+        var sStr = parseInt(document.getElementById('speed').value);
+        var dStr = parseInt(document.getElementById('density').value);
+        var sensStr = parseInt(document.getElementById('audioSens').value);
+        var colorHex = document.getElementById('picker').value;
+
+        var r = parseInt(colorHex.substring(1,3), 16);
+        var g = parseInt(colorHex.substring(3,5), 16);
+        var b = parseInt(colorHex.substring(5,7), 16);
+
+        // Dispatched safely to insulate the Async Web Server memory buffers
+        sendThrottledData({
+            p: pStr, br: bStr, num: nStr, s: sStr, d: dStr, sens: sensStr, r: r, g: g, bl: b
+        });
+    }
+
+    function updateDisplayStrings() {
+        var bStr = document.getElementById('brightness').value;
+        var nStr = document.getElementById('numLeds').value;
+        var sStr = document.getElementById('speed').value;
+        var dStr = document.getElementById('density').value;
+        var sensStr = document.getElementById('audioSens').value;
+        var colorHex = document.getElementById('picker').value;
+
+        if(document.getElementById('brightnessVal'))  document.getElementById('brightnessVal').innerText = bStr;
+        if(document.getElementById('numLedsVal'))    document.getElementById('numLedsVal').innerText = nStr;
+        if(document.getElementById('speedVal'))      document.getElementById('speedVal').innerText = sStr;
+        if(document.getElementById('densityVal'))    document.getElementById('densityVal').innerText = dStr;
+        if(document.getElementById('audioSensVal'))  document.getElementById('audioSensVal').innerText = sensStr;
+
+        if(document.getElementById('colorVal')) {
+            const colorLabel = document.getElementById('colorVal');
+            colorLabel.innerText = colorHex.toUpperCase();
+            colorLabel.style.background = colorHex;
+            var r = parseInt(colorHex.substring(1,3), 16);
+            var g = parseInt(colorHex.substring(3,5), 16);
+            var b = parseInt(colorHex.substring(5,7), 16);
+            var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            colorLabel.style.color = brightness > 125 ? '#000000' : '#ffffff';
+        }
+    }
+
+    function evaluateContextualControls() {
+        var patternId = parseInt(document.getElementById('pattern').value);
+        var cardColor = document.getElementById('wrapperColor');
+        var cardSpeed = document.getElementById('wrapperSpeed');
+        var cardDensity = document.getElementById('wrapperDensity');
+        var cardSens = document.getElementById('wrapperAudioSens');
+
+        cardColor.classList.add('hidden');
+        cardSpeed.classList.add('hidden');
+        cardDensity.classList.add('hidden');
+        cardSens.classList.add('hidden');
+
+        var patternsUsingColor = [0, 16, 17, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36];
+        if (patternsUsingColor.includes(patternId)) { cardColor.classList.remove('hidden'); }
+        if (patternId >= 1 && patternId <= 33) { cardSpeed.classList.remove('hidden'); }
+        if ((patternId >= 1 && patternId <= 15) || (patternId >= 18 && patternId <= 33) || patternId === 16 || patternId === 17) {
+            cardDensity.classList.remove('hidden');
+        }
+        if (patternId >= 34 && patternId <= 36) {
+            cardSpeed.classList.remove('hidden');
+            cardSens.classList.remove('hidden');
+        }
+    }
+
+    window.onload = function() {
+        evaluateContextualControls();
+        updateDisplayStrings();
+    };
+</script>
+</body>
+</html>

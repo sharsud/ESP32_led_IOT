@@ -1,0 +1,54 @@
+# Built artifacts
+
+*.aar
+*.ap_
+*.aab
+
+# Files for the dexdump tool
+*.dex
+
+# Intensive/Large outputs
+bin/
+gen/
+out/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (contains local paths, SDK location, etc.)
+# This SHOULD NOT be in version control because it changes per machine.
+local.properties
+
+# Log files
+*.log
+
+# Android Studio / IntelliJ IDEA files
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/nav/
+.idea/assetWizardSettings.xml
+.idea/modules/
+.idea/deploymentTargetSelector.xml
+.idea/deploymentTargetDropDown.xml
+capture/
+
+# Keystore files (NEVER commit your production signing keys!)
+*.jks
+*.keystore
+*.pk8
+*.p12
+
+# Google Services config file (often kept out for public repos, but optional)
+# google-services.json
+
+# Crashlytics mapping file
+com_crashlytics_export_strings.xml
+crashlytics.properties
+crashlytics-build.properties
+
+# OS specific files
+.DS_Store
+Thumbs.db
