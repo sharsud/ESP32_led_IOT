@@ -35,6 +35,7 @@ uint8_t pickerBlue = 0;
 // --- Dual-Array Crossfade Architecture ---
 CRGB leds[MAX_LEDS];       
 CRGB targetLeds[MAX_LEDS]; 
+uint8_t crossfadeSpeed = 15; // Controlled via frontend dashboard sliders now
 
 // --- Advanced Audio Infrastructure Registers ---
 float dynamicMicHigh = 1500.0;
