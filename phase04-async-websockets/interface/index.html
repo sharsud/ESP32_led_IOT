@@ -641,9 +641,14 @@
         const apiKey = await getStoredApiKey();
         if (!apiKey) return;
 
-        // Strip prefixes to evaluate base address domains accurately
-        let wsAddress = ip.replace('http://', '').replace('https://', '');
+        // Clean domain processing framework
+        let wsAddress = ip.trim();
+        // Remove explicit protocol schemes cleanly
+        wsAddress = wsAddress.replace(/^https?:\/\//i, '');
+        // Strip trailing slashes safely
         if (wsAddress.endsWith('/')) { wsAddress = wsAddress.slice(0, -1); }
+
+        console.log(`[WS Attempt] Binding target socket channel: ws://${wsAddress}/ws`);
 
         // Secure Handshake via Query String parameters
         socket = new WebSocket(`ws://${wsAddress}/ws?apiKey=${apiKey}`);
@@ -688,15 +693,17 @@
         };
 
         socket.onclose = () => {
-            badge.innerText = "▼ DISCONNECTED";
-            badge.style.background = "#4a1d1d";
-            badge.style.color = "#e53e3e";
-            
-            // Automated Silent Background Reconnection Management Loop
-            if (!reconnectInterval) {
-                reconnectInterval = setInterval(initiateWebSocket, 4000);
-            }
-        };
+			// 1. Instantly update the UI status badge to reflect the drop
+			const badge = document.getElementById('statusBadge');
+			badge.innerText = "▼ DISCONNECTED";
+			badge.style.background = "#4a1d1d";
+			badge.style.color = "#e53e3e";
+			
+			// 2. Trigger the auto-reconnect polling loop
+			if (!reconnectInterval) {
+				reconnectInterval = setInterval(initiateWebSocket, 4000);
+			}
+		};
 
         socket.onerror = (err) => { console.error("Socket error encountered:", err); };
     }

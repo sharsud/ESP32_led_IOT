@@ -1,4 +1,3 @@
-@ -1,488 +0,0 @@
 #include <FastLED.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
@@ -36,7 +35,6 @@ uint8_t pickerBlue = 0;
 // --- Dual-Array Crossfade Architecture ---
 CRGB leds[MAX_LEDS];       
 CRGB targetLeds[MAX_LEDS]; 
-uint8_t crossfadeSpeed = 15;
 
 // --- Advanced Audio Infrastructure Registers ---
 float dynamicMicHigh = 1500.0;
@@ -54,6 +52,9 @@ String globalApiKey = "";
 const byte DNS_PORT = 53;
 bool isProvisionMode = false;
 String scannedNetworksHTML = "";
+
+// FreeRTOS Task Handle for Core 0 Visual Worker Thread
+TaskHandle_t FastLEDTaskHandle = NULL;
 
 // --- Core Helper Functions Used by Visual Engine ---
 int const_of_d(int val, int low, int high) { 
@@ -82,15 +83,15 @@ void calculateAGC(int currentSample) {
 #include "Effects.h"
 
 // --- Forward Declarations ---
-void handleSerialCommunication();
 void blendFrames();
 bool attemptWiFiConnection();
 void launchCaptivePortal();
 void sendSystemStatus(AsyncWebSocketClient *client = nullptr);
 void scanNetworks();
 void runSelectedPattern(uint8_t patternId);
+void fastLEDCoreTask(void *pvParameters);
 
-// --- WebSocket Event Processor ---
+// --- WebSocket Event Processor (Delta Aware) ---
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
   if (type == WS_EVT_CONNECT) {
     Serial.printf("[WS] Client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
@@ -102,7 +103,6 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
   else if (type == WS_EVT_DATA) {
     AwsFrameInfo *info = (AwsFrameInfo*)arg;
     if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
-      // Fix: Safely slice string without mutating data bounds to prevent UTF-8 truncation errors
       String jsonStr = String((char*)data).substring(0, len);
       
       JsonDocument doc;
@@ -112,8 +112,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         return;
       }
 
-      Serial.printf("[WS] Received payload: %s\n", jsonStr.c_str());
-
+      // Processes incoming fields atomically based on changes (Deltas)
       if (doc.containsKey("power")) {
         systemPowerState = doc["power"].as<bool>();
         if (!systemPowerState) {
@@ -123,42 +122,35 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
           globalBrightness = (savedBrightness == 0) ? 100 : savedBrightness;
         }
         FastLED.setBrightness(globalBrightness);
-        Serial.printf(" -> Power state updated: %s (Brightness: %d)\n", systemPowerState ? "ON" : "OFF", globalBrightness);
       }
       if (doc.containsKey("p")) {
         currentPatternIndex = doc["p"].as<uint8_t>();
-        Serial.printf(" -> Pattern index updated: %d\n", currentPatternIndex);
       }
       if (doc.containsKey("br")) {
         globalBrightness = doc["br"].as<uint8_t>();
         if (globalBrightness > 0) systemPowerState = true;
         FastLED.setBrightness(globalBrightness);
-        Serial.printf(" -> Brightness updated: %d\n", globalBrightness);
       }
       if (doc.containsKey("num")) {
         dynamicNumLeds = doc["num"].as<int>();
-        Serial.printf(" -> LED Count updated: %d\n", dynamicNumLeds);
       }
       if (doc.containsKey("s")) {
         globalSpeed = doc["s"].as<uint8_t>();
-        Serial.printf(" -> Speed modifier updated: %d\n", globalSpeed);
       }
       if (doc.containsKey("d")) {
         globalDensity = doc["d"].as<uint8_t>();
-        Serial.printf(" -> Density modifier updated: %d\n", globalDensity);
       }
       if (doc.containsKey("sens")) {
         audioSens = doc["sens"].as<uint8_t>();
-        Serial.printf(" -> Audio Sensitivity updated: %d\n", audioSens);
       }
-      if (doc.containsKey("r") || doc.containsKey("g") || doc.containsKey("bl")) {
-        if (doc.containsKey("r"))  pickerRed = doc["r"].as<uint8_t>();
-        if (doc.containsKey("g"))  pickerGreen = doc["g"].as<uint8_t>();
-        if (doc.containsKey("bl")) pickerBlue = doc["bl"].as<uint8_t>();
-        Serial.printf(" -> Color target updated: R=%d, G=%d, B=%d\n", pickerRed, pickerGreen, pickerBlue);
+      if (doc.containsKey("xfade")) {
+        crossfadeSpeed = doc["xfade"].as<uint8_t>();
       }
+      if (doc.containsKey("r"))  pickerRed = doc["r"].as<uint8_t>();
+      if (doc.containsKey("g"))  pickerGreen = doc["g"].as<uint8_t>();
+      if (doc.containsKey("bl")) pickerBlue = doc["bl"].as<uint8_t>();
 
-      sendSystemStatus();
+      sendSystemStatus(); // Update and synchronize all alternate interfaces
     }
   }
 }
@@ -173,6 +165,7 @@ void sendSystemStatus(AsyncWebSocketClient *client) {
   doc["density"] = globalDensity;
   doc["numLeds"] = dynamicNumLeds;
   doc["audioSens"] = audioSens;
+  doc["xfade"] = crossfadeSpeed;
   doc["r"] = pickerRed;
   doc["g"] = pickerGreen;
   doc["bl"] = pickerBlue;
@@ -182,20 +175,17 @@ void sendSystemStatus(AsyncWebSocketClient *client) {
   
   if (client != nullptr) {
     client->text(output);
-    Serial.printf("[WS] Status sent to Client #%u\n", client->id());
   } else {
     ws.textAll(output);
-    Serial.println("[WS] Status broadcasted to all clients.");
   }
 }
 
 void setup() {
   Serial.begin(115200);
   delay(500); 
-  Serial.setTimeout(5); 
 
   Serial.println("==================================================================");
-  Serial.println("System Core Architecture Online. Initializing Storage Engine.");
+  Serial.println("PsudoGlow Engine Initializing storage mapping layout.");
   Serial.println("==================================================================");
 
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, MAX_LEDS).setCorrection(TypicalSMD5050);
@@ -220,13 +210,10 @@ void setup() {
   if (attemptWiFiConnection()) {
     ws.onEvent(onWsEvent);
     
-    // Handshake Authorization Filter
     ws.setFilter([](AsyncWebServerRequest *request) -> bool {
       if (request->hasParam("apiKey") && request->getParam("apiKey")->value() == globalApiKey) {
-        Serial.println("[WS] Security Handshake Filter: PASSED.");
         return true; 
       }
-      Serial.println("⚠️ WebSocket connection rejected: Invalid or Missing API Key.");
       return false; 
     });
 
@@ -237,7 +224,6 @@ void setup() {
     });
 
     server.on("/get-key", HTTP_GET, [](AsyncWebServerRequest *request){
-      Serial.println("[HTTP] API Key request received via /get-key");
       AsyncResponseStream *response = request->beginResponseStream("application/json");
       response->addHeader("Access-Control-Allow-Origin", "*");
       JsonDocument doc;
@@ -247,96 +233,100 @@ void setup() {
     });
 
     server.begin();
-    Serial.println("Asynchronous Local Web Server & WebSocket Layer Online.");
+    Serial.println("Asynchronous Local Web Server Running on Core 1.");
   } else {
-    Serial.println("❌ Saved WiFi profile validation failed or empty. Redirecting to Captive Portal fallback.");
     launchCaptivePortal();
   }
 
   if (MDNS.begin("psudoglow")) {
     Serial.println("▶ mDNS responder started! Target URL: http://psudoglow.local/");
   }
+
+  // --- Pin Blending and FastLED Execution to Core 0 Task ---
+  xTaskCreatePinnedToCore(
+    fastLEDCoreTask,        /* Task function */
+    "FastLEDTask",          /* Name of task */
+    4096,                   /* Stack size in words */
+    NULL,                   /* Task input parameter */
+    3,                      /* Priority of the task (High) */
+    &FastLEDTaskHandle,     /* Task handle to keep track of created task */
+    0                       /* Pin task to Core 0 */
+  );
+  Serial.println("▶ FastLED Engine Isolated and Assigned to Core 0 Thread context.");
 }
 
+// Core 1 loop is now kept totally lean to handle networking & clients
 void loop() {
   if (isProvisionMode) {
     dnsServer.processNextRequest();
-    
-    EVERY_N_MILLISECONDS(20) {
+  } else {
+    ws.cleanupClients();
+  }
+  vTaskDelay(pdMS_TO_TICKS(10)); // Give breathing space to Core 1 OS operations
+}
+
+// Separate Core 0 runtime engine task loop
+void fastLEDCoreTask(void *pvParameters) {
+  for(;;) {
+    if (isProvisionMode) {
       uint8_t pulse = beatsin8(15, 20, 120);
       fill_solid(targetLeds, dynamicNumLeds, CRGB(0, 0, pulse));
       blendFrames();
       FastLED.show();
-    }
-  } else {
-    ws.cleanupClients();
-    handleSerialCommunication();
-    
-    if (systemPowerState && globalBrightness > 0) {
-      runSelectedPattern(currentPatternIndex);
     } else {
-      fill_solid(targetLeds, MAX_LEDS, CRGB::Black);
+      if (systemPowerState && globalBrightness > 0) {
+        runSelectedPattern(currentPatternIndex);
+      } else {
+        fill_solid(targetLeds, MAX_LEDS, CRGB::Black);
+      }
+      
+      blendFrames();
+      FastLED.show();
+      
+      uint8_t scaledHueSpeed = map(globalSpeed, 0, 255, 1, 10);
+      gHue += scaledHueSpeed;
     }
     
-    blendFrames();
-    FastLED.show();
-    FastLED.delay(1000 / 120); 
-    
-    uint8_t scaledHueSpeed = map(globalSpeed, 0, 255, 1, 10);
-    EVERY_N_MILLISECONDS(20) { 
-      gHue += scaledHueSpeed; 
-    }
+    // Locks processing rate cleanly to ~120 FPS inside Core 0 without blocking network stack
+    vTaskDelay(pdMS_TO_TICKS(8)); 
   }
 }
 
 // --- Network Connectivity & Provisioning Captive Portal Engines ---
-
 bool attemptWiFiConnection() {
   String savedSSID = preferences.getString("ssid", "");
   String savedPassword = preferences.getString("password", "");
 
   if (savedSSID == "") {
-    Serial.println("[WiFi] No configurations found in persistent NVS tables.");
     return false;
   }
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(savedSSID.c_str(), savedPassword.c_str());
-  
-  Serial.print("[WiFi] Attempting connection to SSID: ");
-  Serial.println(savedSSID);
 
   int connectionAttempts = 0;
   while (WiFi.status() != WL_CONNECTED && connectionAttempts < 20) {
     delay(500);
     connectionAttempts++;
-    Serial.print(".");
     fill_solid(leds, 10, (connectionAttempts % 2 == 0) ? CRGB(255, 100, 0) : CRGB::Black);
     FastLED.show();
   }
-  Serial.println();
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("[WiFi] Connected successfully! Station IP assigned: ");
-    Serial.println(WiFi.localIP());
     fill_solid(leds, dynamicNumLeds, CRGB::Green);
     FastLED.show();
     delay(500);
     return true;
   }
-  
-  Serial.println("[WiFi] Connection timeout. Parameters invalid.");
   return false;
 }
 
 void scanNetworks() {
-  Serial.println("[WiFi] Enumerating visible local radio stations...");
   int n = WiFi.scanNetworks();
   scannedNetworksHTML = "";
   for (int i = 0; i < n; ++i) {
     scannedNetworksHTML += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + " (" + String(WiFi.RSSI(i)) + " dBm)</option>";
   }
-  Serial.printf("[WiFi] Found %d networks.\n", n);
 }
 
 void launchCaptivePortal() {
@@ -347,9 +337,7 @@ void launchCaptivePortal() {
   dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
   scanNetworks();
 
-  // Handle Setup Portal serving
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    Serial.println("[Portal] Serving setup configuration UI.");
     String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
     html += "<style>body{font-family:sans-serif; background:#f0f2f5; padding:20px; text-align:center;} ";
     html += ".card{background:white; padding:30px; border-radius:12px; box-shadow:0 4px 10px rgba(0,0,0,0.1); max-width:400px; margin:auto;} ";
@@ -363,7 +351,6 @@ void launchCaptivePortal() {
     request->send(200, "text/html", html);
   });
 
-  // Handle configuration extraction and commit routines
   server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request){
     String reqSsid = "";
     String reqPass = "";
@@ -372,25 +359,21 @@ void launchCaptivePortal() {
     if(request->hasParam("password", true)) reqPass = request->getParam("password", true)->value();
 
     if (reqSsid != "") {
-      Serial.printf("[Portal] Received configuration settings. SSID: %s\n", reqSsid.c_str());
       preferences.putString("ssid", reqSsid);
       preferences.putString("password", reqPass);
       request->send(200, "text/html", "<h3>Configuration Saved. Rebooting to establish connection...</h3>");
       delay(2000);
       ESP.restart();
     } else {
-      Serial.println("[Portal] Invalid submission received.");
       request->send(400, "text/plain", "Bad Request: SSID missing.");
     }
   });
 
-  // Redirect wildcard queries requested via underlying mobile components inside the captive loop
   server.onNotFound([](AsyncWebServerRequest *request){
     request->redirect("/");
   });
 
   server.begin();
-  Serial.println("🔌 Provisioning Access Point Active. SSID: 'PsudoGlow-Setup'");
 }
 
 void blendFrames() {
@@ -404,48 +387,12 @@ void blendFrames() {
   }
 }
 
-void handleSerialCommunication() {
-  if (Serial.available() > 0) {
-    String input = Serial.readStringUntil('\n');
-    input.trim();
-    if (input.length() == 0) return;
-
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, input);
-    if (error) return;
-
-    Serial.printf("[Serial] Local payload execution: %s\n", input.c_str());
-
-    if (doc.containsKey("p"))     currentPatternIndex = doc["p"].as<uint8_t>();
-    if (doc.containsKey("br"))    {
-      globalBrightness = doc["br"].as<uint8_t>();
-      FastLED.setBrightness(globalBrightness);
-    }
-    if (doc.containsKey("num"))   dynamicNumLeds = doc["num"].as<int>();
-    if (doc.containsKey("s"))     globalSpeed = doc["s"].as<uint8_t>();
-    if (doc.containsKey("d"))     globalDensity = doc["d"].as<uint8_t>();
-    if (doc.containsKey("sens"))  audioSens = doc["sens"].as<uint8_t>();
-    if (doc.containsKey("r"))     pickerRed = doc["r"].as<uint8_t>();
-    if (doc.containsKey("g"))     pickerGreen = doc["g"].as<uint8_t>();
-    if (doc.containsKey("bl"))    pickerBlue = doc["bl"].as<uint8_t>();
-    
-    sendSystemStatus();
-  }
-}
-
 void runSelectedPattern(uint8_t patternId) {
   switch (patternId) {
-    // ========================================================================
-    // SECTION C: STANDARD CANVAS & SOLID FOUNDATIONS (First)
-    // ========================================================================
     case 0:  solidColorPicker();          break; 
     case 1:  rainbow();                   break; 
     case 2:  rainbowVortex();             break; 
     case 3:  rainbowWithGlitter();        break; 
-
-    // ========================================================================
-    // SECTION B: KINETIC PACING & SPATIAL DENSITY GENERATORS
-    // ========================================================================
     case 4:  confetti();                  break; 
     case 5:  sinelon();                   break; 
     case 6:  bpm();                       break; 
@@ -476,14 +423,9 @@ void runSelectedPattern(uint8_t patternId) {
     case 31: zenBambooForest();           break; 
     case 32: electricTeslaArc();          break; 
     case 33: tokyoNeonRain();             break; 
-
-    // ========================================================================
-    // SECTION A: ADVANCED AUDIO ANALYSIS / HARDWARE SYNC (Last)
-    // ========================================================================
     case 34: visualize_music();           break; 
     case 35: visualize_music_solids();    break; 
     case 36: visualize_music_dual_tone(); break; 
-
     default: rainbow();                   break;
   }
 }
