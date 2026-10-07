@@ -21,3 +21,4 @@ ehthumbs.db
 *.elf
 *.map
 secrets.h
+phase04-async-websockets/test_i2s/minimal_led_test/minimal_led_test.ino
