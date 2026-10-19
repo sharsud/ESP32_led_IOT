@@ -6,21 +6,28 @@
 #include <Preferences.h>
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
+#include <ESP_I2S.h>
+#include <math.h>
 
 // --- Hardware Constraints ---
-#define MAX_LEDS          300        
-#define LED_PIN           2          
-#define ANALOG_READ       34         
+#define MAX_LEDS          300
+#define LED_PIN           2
 #define LED_TYPE          WS2811
 #define COLOR_ORDER       GRB
+
+// --- I2S Audio Configuration (INMP441) ---
+#define I2S_BCLK          18
+#define I2S_WS            5
+#define I2S_DIN           4
+#define SAMPLE_RATE       16000
 
 // --- System Global State Registers ---
 uint8_t currentPatternIndex = 0;
 uint8_t gHue = 0;
 uint8_t globalBrightness = 100;
-uint8_t savedBrightness = 100; 
-bool systemPowerState = true;   
-int dynamicNumLeds = 212;            
+uint8_t savedBrightness = 100;
+bool systemPowerState = true;
+int dynamicNumLeds = 212;
 uint8_t audioSens = 5;
 
 // --- Advanced Interactive Modifier Registers ---
@@ -41,6 +48,27 @@ uint8_t crossfadeSpeed = 15; // Controlled via frontend dashboard sliders now
 float dynamicMicHigh = 1500.0;
 float smoothedLedCount = 0.0;
 
+// --- I2S Audio Processing Variables ---
+I2SClass I2S;
+float audioNoiseFloor = 70000.0;
+float audioMaxLevel = 1000000.0;
+float audioSensitivity = 1.0;
+float audioLevel = 0.0;
+float audioGateOpen = 80000.0;
+float audioGateClose = 50000.0;
+bool audioLedsActive = false;
+
+// --- Beat Detection Variables ---
+float audioPeakLevel = 0.0;
+float audioPeakDecay = 0.985; // Peak decay rate
+unsigned long lastBeatTime = 0;
+float detectedBPM = 0.0;
+bool beatDetected = false;
+
+// --- Attack/Release Variables ---
+float audioAttack = 0.50; // Fast attack (0.1 - 1.0)
+float audioRelease = 0.06; // Slow release (0.01 - 0.3)
+
 // --- Persistent Storage & Network Core Architecture ---
 Preferences preferences;
 AsyncWebServer server(80);
@@ -58,7 +86,7 @@ String scannedNetworksHTML = "";
 TaskHandle_t FastLEDTaskHandle = NULL;
 
 // --- Core Helper Functions Used by Visual Engine ---
-int const_of_d(int val, int low, int high) { 
+int const_of_d(int val, int low, int high) {
   if (val < low) return low;
   if (val > high) return high;
   return val;
@@ -67,17 +95,124 @@ int const_of_d(int val, int low, int high) {
 void calculateAGC(int currentSample) {
   static int peakSample = 500;
   uint8_t decayRate = map(globalSpeed, 0, 255, 1, 8);
-  
-  EVERY_N_MILLISECONDS(15) { 
+
+  EVERY_N_MILLISECONDS(15) {
     if (peakSample > 400) {
       peakSample -= decayRate;
     }
   }
-  
-  if (currentSample > peakSample) { 
+
+  if (currentSample > peakSample) {
     peakSample = currentSample;
   }
   dynamicMicHigh = peakSample;
+}
+
+// --- I2S Audio Processing Functions ---
+void setupI2S() {
+  Serial.println("[I2S] Initializing I2S with ESP_I2S library...");
+  I2S.setPins(I2S_BCLK, I2S_WS, -1, I2S_DIN, -1);
+
+  if (!I2S.begin(I2S_MODE_STD, SAMPLE_RATE, I2S_DATA_BIT_WIDTH_32BIT,
+                 I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
+    Serial.println("[I2S] ERROR - Init failed");
+    fill_solid(leds, 10, CRGB::Red);
+    FastLED.show();
+    while (true) delay(1000);
+  }
+  Serial.println("[I2S] Initialized successfully");
+}
+
+float readAudioLevel() {
+  const int SAMPLES = 160;
+  int32_t samples[SAMPLES];
+  float total = 0;
+  int validSamples = 0;
+
+  for (int i = 0; i < SAMPLES; i++) {
+    int32_t raw = I2S.read();
+    if (raw == 0 || raw == 1) {
+      samples[i] = 0;
+      continue;
+    }
+    int32_t sample = raw >> 8;
+    samples[i] = sample;
+    total += sample;
+    validSamples++;
+  }
+
+  if (validSamples == 0) return 0;
+
+  float average = total / validSamples;
+  float amplitude = 0;
+  int valid = 0;
+
+  for (int i = 0; i < SAMPLES; i++) {
+    if (samples[i] == 0) continue;
+    float value = fabs((float)samples[i] - average);
+    amplitude += value;
+    valid++;
+  }
+
+  if (valid == 0) return 0;
+  return amplitude / valid;
+}
+
+float getProcessedAudioLevel() {
+  float level = readAudioLevel();
+  level *= audioSensitivity;
+
+  // Noise gate with hysteresis
+  if (!audioLedsActive) {
+    if (level >= audioGateOpen) {
+      audioLedsActive = true;
+    } else {
+      level = 0;
+    }
+  } else {
+    if (level <= audioGateClose) {
+      audioLedsActive = false;
+    }
+  }
+
+  // Remove noise floor
+  float usableLevel = 0;
+  if (audioLedsActive) {
+    usableLevel = level - audioNoiseFloor;
+    if (usableLevel < 0) usableLevel = 0;
+  }
+
+  // Peak detection
+  if (usableLevel > audioPeakLevel) {
+    audioPeakLevel = usableLevel;
+    // Detect beat when level exceeds 80% of peak
+    if (usableLevel > audioPeakLevel * 0.8 && !beatDetected) {
+      beatDetected = true;
+      unsigned long now = millis();
+      if (lastBeatTime > 0) {
+        float interval = (now - lastBeatTime) / 1000.0;
+        detectedBPM = 60.0 / interval;
+        // Smooth BPM
+        static float smoothedBPM = 0;
+        smoothedBPM = (smoothedBPM * 0.9) + (detectedBPM * 0.1);
+        detectedBPM = smoothedBPM;
+      }
+      lastBeatTime = now;
+    }
+  } else {
+    // Decay peak
+    audioPeakLevel *= audioPeakDecay;
+    beatDetected = false;
+  }
+
+  // Smooth audio with configurable attack/release
+  if (usableLevel > audioLevel) {
+    audioLevel += (usableLevel - audioLevel) * audioAttack;
+  } else {
+    audioLevel += (usableLevel - audioLevel) * audioRelease;
+  }
+
+  return audioLevel;
 }
 
 // --- Import Isolated Visual Presets Block ---
@@ -151,6 +286,26 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
       if (doc.containsKey("g"))  pickerGreen = doc["g"].as<uint8_t>();
       if (doc.containsKey("bl")) pickerBlue = doc["bl"].as<uint8_t>();
 
+      // I2S Audio parameters
+      if (doc.containsKey("t")) {
+        audioGateOpen = doc["t"].as<float>();
+      }
+      if (doc.containsKey("m")) {
+        audioMaxLevel = doc["m"].as<float>();
+      }
+      if (doc.containsKey("sensMult")) {
+        audioSensitivity = doc["sensMult"].as<float>();
+      }
+      if (doc.containsKey("attack")) {
+        audioAttack = doc["attack"].as<float>();
+      }
+      if (doc.containsKey("release")) {
+        audioRelease = doc["release"].as<float>();
+      }
+      if (doc.containsKey("peakDecay")) {
+        audioPeakDecay = doc["peakDecay"].as<float>();
+      }
+
       sendSystemStatus(); // Update and synchronize all alternate interfaces
     }
   }
@@ -170,10 +325,17 @@ void sendSystemStatus(AsyncWebSocketClient *client) {
   doc["r"] = pickerRed;
   doc["g"] = pickerGreen;
   doc["bl"] = pickerBlue;
+  doc["t"] = audioGateOpen;
+  doc["m"] = audioMaxLevel;
+  doc["sensMult"] = audioSensitivity;
+  doc["attack"] = audioAttack;
+  doc["release"] = audioRelease;
+  doc["peakDecay"] = audioPeakDecay;
+  doc["bpm"] = detectedBPM;
 
   String output;
   serializeJson(doc, output);
-  
+
   if (client != nullptr) {
     client->text(output);
   } else {
@@ -190,13 +352,19 @@ void setup() {
   Serial.println("==================================================================");
 
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, MAX_LEDS).setCorrection(TypicalSMD5050);
-  FastLED.setMaxPowerInVoltsAndMilliamps(5, 100000); 
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, 100000);
   FastLED.setBrightness(globalBrightness);
   FastLED.clear(true);
 
+  // Initialize I2S Audio
+  setupI2S();
+
   preferences.begin("wifi-config", false);
   globalApiKey = preferences.getString("apiKey", "");
-  
+
+  // Uncomment the line below to force generate a new key
+  // globalApiKey = "";
+
   if (globalApiKey == "") {
     const char hexChars[] = "0123456789ABCDEF";
     for (int i = 0; i < 32; i++) {
@@ -280,16 +448,16 @@ void fastLEDCoreTask(void *pvParameters) {
       } else {
         fill_solid(targetLeds, MAX_LEDS, CRGB::Black);
       }
-      
+
       blendFrames();
       FastLED.show();
-      
+
       uint8_t scaledHueSpeed = map(globalSpeed, 0, 255, 1, 10);
       gHue += scaledHueSpeed;
     }
-    
+
     // Locks processing rate cleanly to ~120 FPS inside Core 0 without blocking network stack
-    vTaskDelay(pdMS_TO_TICKS(8)); 
+    vTaskDelay(pdMS_TO_TICKS(8));
   }
 }
 
@@ -424,9 +592,14 @@ void runSelectedPattern(uint8_t patternId) {
     case 31: zenBambooForest();           break; 
     case 32: electricTeslaArc();          break; 
     case 33: tokyoNeonRain();             break; 
-    case 34: visualize_music();           break; 
-    case 35: visualize_music_solids();    break; 
-    case 36: visualize_music_dual_tone(); break; 
+    case 34: visualize_music();           break;
+    case 35: visualize_music_solids();    break;
+    case 36: visualize_music_dual_tone(); break;
+    case 37: visualize_beat_sync();      break;
+    case 38: visualize_peak_hold();      break;
+    case 39: visualize_audio_ripple();    break;
+    case 40: visualize_audio_pulse_ring(); break;
+    case 41: visualize_audio_starfield();  break;
     default: rainbow();                   break;
   }
 }

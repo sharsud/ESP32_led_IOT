@@ -19,6 +19,14 @@ extern float smoothedLedCount;
 extern void calculateAGC(int currentSample);
 extern int const_of_d(int val, int low, int high);
 
+// --- I2S Audio Processing ---
+extern float getProcessedAudioLevel();
+extern float audioMaxLevel;
+extern float audioNoiseFloor;
+extern float audioPeakLevel;
+extern float detectedBPM;
+extern bool beatDetected;
+
 // --- Internal Helper Block ---
 void addGlitter(fract8 chanceOfGlitter) { 
   if (random8() < chanceOfGlitter) { 
@@ -78,56 +86,61 @@ void juggle() {
 }
 
 void visualize_music() {
-  int sensor_value = analogRead(34); // Hardware Pin[cite: 1, 3]
-  if (sensor_value < MIC_LOW) {
-    sensor_value = MIC_LOW; // Cutoff floor boundary[cite: 1]
+  float audioLevel = getProcessedAudioLevel();
+
+  // Convert audio level to LED count
+  float brightness = 0;
+  if (audioLevel > 0) {
+    brightness = (audioLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
   }
-  calculateAGC(sensor_value); // Baseline calculation engine[cite: 1, 3]
-  
-  // Apply our scaling factor multiplier (Normalized centered around 5)
-  float manualGainModifier = (float)audioSens / 5.0;
-  
-  // Inject the modifier safely into target active bounds mapping
-  int targetLedCount = int((((dynamicNumLeds / dynamicMicHigh) * sensor_value) / 2) * manualGainModifier);
-  
-  smoothedLedCount = (0.15 * targetLedCount) + (0.85 * smoothedLedCount); // Temporal lowpass damping filter[cite: 1, 3]
+  brightness = constrain(brightness, 0, 255);
+
+  // Map brightness to LED count (center outward)
+  int targetLedCount = map((int)brightness, 0, 255, 0, dynamicNumLeds / 2);
+  smoothedLedCount = (0.15 * targetLedCount) + (0.85 * smoothedLedCount);
   int activeBound = (int)smoothedLedCount;
-  
-  // Boundary safety clamp constraint to stop buffer array overflow risks
+
   if (activeBound > (dynamicNumLeds / 2)) {
     activeBound = (dynamicNumLeds / 2);
   }
-  
-  uint8_t noLed = uint8_t(dynamicNumLeds / 2); // Anchor midpoint point allocation[cite: 1]
+
+  uint8_t noLed = uint8_t(dynamicNumLeds / 2);
   int maxLed = noLed + activeBound;
   int minLed = noLed - activeBound;
-  
-  fadeToBlackBy(targetLeds, dynamicNumLeds, 255); 
-  
+
+  fadeToBlackBy(targetLeds, dynamicNumLeds, 255);
+
   uint8_t localHue = gHue;
   for (int i = noLed; i >= minLed; i--) {
-    if (i >= 0) { targetLeds[i] = CHSV(localHue, 255, 255); } // Lower safety buffer check[cite: 1]
+    if (i >= 0) { targetLeds[i] = CHSV(localHue, 255, 255); }
     localHue += 3;
   }
   localHue = gHue;
   for (int i = noLed + 1; i < maxLed; i++) {
-    if (i < dynamicNumLeds) { targetLeds[i] = CHSV(localHue, 255, 255); } // Upper safety buffer check[cite: 1]
+    if (i < dynamicNumLeds) { targetLeds[i] = CHSV(localHue, 255, 255); }
     localHue += 3;
   }
 }
 
 void visualize_music_solids() {
-  int sensor_value = analogRead(34);
-  if (sensor_value < MIC_LOW) {
-    sensor_value = MIC_LOW;
+  float audioLevel = getProcessedAudioLevel();
+
+  // Convert audio level to LED count
+  float brightness = 0;
+  if (audioLevel > 0) {
+    brightness = (audioLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
   }
-  calculateAGC(sensor_value);
-  int targetLedCount = int(((dynamicNumLeds / dynamicMicHigh) * sensor_value) / 2);
+  brightness = constrain(brightness, 0, 255);
+
+  // Map brightness to LED count (center outward)
+  int targetLedCount = map((int)brightness, 0, 255, 0, dynamicNumLeds / 2);
   smoothedLedCount = (0.15 * targetLedCount) + (0.85 * smoothedLedCount);
   int activeBound = (int)smoothedLedCount;
+
   uint8_t noLed = uint8_t(dynamicNumLeds / 2);
   int maxLed = noLed + activeBound;
   int minLed = noLed - activeBound;
+
   fadeToBlackBy(targetLeds, 300, 255);
   CRGB solidPickerColor = CRGB(pickerRed, pickerGreen, pickerBlue);
   for (int i = noLed; i >= minLed; i--) {
@@ -139,17 +152,24 @@ void visualize_music_solids() {
 }
 
 void visualize_music_dual_tone() {
-  int sensor_value = analogRead(34);
-  if (sensor_value < MIC_LOW) {
-    sensor_value = MIC_LOW;
+  float audioLevel = getProcessedAudioLevel();
+
+  // Convert audio level to LED count
+  float brightness = 0;
+  if (audioLevel > 0) {
+    brightness = (audioLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
   }
-  calculateAGC(sensor_value);
-  int targetLedCount = int(((dynamicNumLeds / dynamicMicHigh) * sensor_value) / 2);
+  brightness = constrain(brightness, 0, 255);
+
+  // Map brightness to LED count (center outward)
+  int targetLedCount = map((int)brightness, 0, 255, 0, dynamicNumLeds / 2);
   smoothedLedCount = (0.15 * targetLedCount) + (0.85 * smoothedLedCount);
   int activeBound = (int)smoothedLedCount;
+
   uint8_t noLed = uint8_t(dynamicNumLeds / 2);
   int maxLed = noLed + activeBound;
   int minLed = noLed - activeBound;
+
   fadeToBlackBy(targetLeds, 300, 255);
   for (int i = noLed; i >= minLed; i--) {
     targetLeds[i] = CRGB(pickerRed, pickerGreen, pickerBlue);
@@ -158,6 +178,151 @@ void visualize_music_dual_tone() {
   for (int i = noLed + 1; i < maxLed; i++) {
     targetLeds[i] = CHSV(localHue, 255, 255);
     localHue += 3;
+  }
+}
+
+// --- NEW: Beat Sync Effect ---
+void visualize_beat_sync() {
+  float audioLevel = getProcessedAudioLevel();
+
+  // Base level visualization
+  float brightness = 0;
+  if (audioLevel > 0) {
+    brightness = (audioLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
+  }
+  brightness = constrain(brightness, 0, 255);
+
+  // Beat detection flash
+  if (beatDetected) {
+    for (int i = 0; i < dynamicNumLeds; i++) {
+      targetLeds[i] = CHSV(gHue, 255, 255);
+    }
+  } else {
+    // Dim based on audio level
+    for (int i = 0; i < dynamicNumLeds; i++) {
+      targetLeds[i] = CHSV(gHue, 200, brightness);
+    }
+  }
+}
+
+// --- NEW: Peak Hold Effect ---
+void visualize_peak_hold() {
+  float audioLevel = getProcessedAudioLevel();
+
+  // Convert levels to LED count
+  float brightness = 0;
+  if (audioLevel > 0) {
+    brightness = (audioLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
+  }
+  brightness = constrain(brightness, 0, 255);
+
+  float peakBrightness = 0;
+  if (audioPeakLevel > 0) {
+    peakBrightness = (audioPeakLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
+  }
+  peakBrightness = constrain(peakBrightness, 0, 255);
+
+  int currentLedCount = map((int)brightness, 0, 255, 0, dynamicNumLeds);
+  int peakLedCount = map((int)peakBrightness, 0, 255, 0, dynamicNumLeds);
+
+  fadeToBlackBy(targetLeds, dynamicNumLeds, 30);
+
+  // Current level (solid fill with gradient)
+  for (int i = 0; i < currentLedCount; i++) {
+    uint8_t brightnessLevel = map(i, 0, currentLedCount, 50, 255);
+    targetLeds[i] = CHSV(160, 200, brightnessLevel);
+  }
+
+  // Peak hold (bright white tip at peak position only)
+  if (peakLedCount > 0 && peakLedCount <= dynamicNumLeds) {
+    targetLeds[peakLedCount - 1] = CRGB::White;
+    // Add a small glow around the peak
+    if (peakLedCount > 1) {
+      targetLeds[peakLedCount - 2] = CRGB(150, 150, 150);
+    }
+    if (peakLedCount < dynamicNumLeds) {
+      targetLeds[peakLedCount] = CRGB(100, 100, 100);
+    }
+  }
+}
+
+// --- NEW: Audio Ripple Effect (Center Outward) ---
+void visualize_audio_ripple() {
+  float audioLevel = getProcessedAudioLevel();
+
+  float brightness = 0;
+  if (audioLevel > 0) {
+    brightness = (audioLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
+  }
+  brightness = constrain(brightness, 0, 255);
+
+  fadeToBlackBy(targetLeds, dynamicNumLeds, 40);
+
+  // Create ripple from center
+  int center = dynamicNumLeds / 2;
+  int rippleSize = map((int)brightness, 0, 255, 0, dynamicNumLeds / 2);
+
+  for (int i = 0; i < dynamicNumLeds; i++) {
+    int distance = abs(i - center);
+    if (distance < rippleSize) {
+      uint8_t waveBrightness = map(distance, 0, rippleSize, 255, 50);
+      targetLeds[i] = CHSV(gHue + (distance * 5), 200, waveBrightness);
+    }
+  }
+}
+
+// --- NEW: Audio Pulse Ring (Expanding Rings) ---
+void visualize_audio_pulse_ring() {
+  float audioLevel = getProcessedAudioLevel();
+
+  float brightness = 0;
+  if (audioLevel > 0) {
+    brightness = (audioLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
+  }
+  brightness = constrain(brightness, 0, 255);
+
+  static int ringPosition = 0;
+  static int ringSpeed = 2;
+
+  // Beat detection advances ring
+  if (beatDetected) {
+    ringPosition = 0;
+  }
+
+  ringPosition += ringSpeed;
+  if (ringPosition > dynamicNumLeds) {
+    ringPosition = 0;
+  }
+
+  fadeToBlackBy(targetLeds, dynamicNumLeds, 30);
+
+  // Create expanding ring
+  for (int i = 0; i < dynamicNumLeds; i++) {
+    int distance = abs(i - ringPosition);
+    if (distance < 20) {
+      uint8_t ringBrightness = map(distance, 0, 20, brightness, 0);
+      targetLeds[i] = CHSV(gHue, 255, ringBrightness);
+    }
+  }
+}
+
+// --- NEW: Audio Starfield (Twinkling Stars) ---
+void visualize_audio_starfield() {
+  float audioLevel = getProcessedAudioLevel();
+
+  float brightness = 0;
+  if (audioLevel > 0) {
+    brightness = (audioLevel / (audioMaxLevel - audioNoiseFloor)) * 255.0;
+  }
+  brightness = constrain(brightness, 0, 255);
+
+  fadeToBlackBy(targetLeds, dynamicNumLeds, 50);
+
+  // Random stars twinkle based on audio level
+  int starCount = map((int)brightness, 0, 255, 1, 20);
+  for (int i = 0; i < starCount; i++) {
+    int pos = random16(dynamicNumLeds);
+    targetLeds[pos] = CHSV(random8(), 200, 255);
   }
 }
 

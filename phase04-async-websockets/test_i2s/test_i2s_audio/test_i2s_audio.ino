@@ -1,3 +1,18 @@
+/*
+ * INMP441 I2S Microphone Test with LED Visualization
+ * Using ESP_I2S library (higher-level API to avoid ADC conflicts)
+ *
+ * Hardware Setup:
+ * INMP441 -> ESP32
+ * VDD  -> 3.3V
+ * GND  -> GND
+ * SCK  -> D18 (GPIO 18)
+ * WS   -> D5 (GPIO 5)
+ * SD   -> D4 (GPIO 4)
+ * L/R  -> GND
+ *
+ * LED Data -> D2 (GPIO 2)
+ */
 
 #include <Arduino.h>
 #include <ESP_I2S.h>
@@ -61,21 +76,26 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  Serial.println("==========================================");
+  Serial.println("INMP441 I2S Audio + LED Test (ESP_I2S lib)");
+  Serial.println("==========================================");
+
   // -------------------------
   // FastLED
   // -------------------------
 
+  Serial.println("[SETUP] Initializing FastLED...");
   FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
-
   FastLED.setBrightness(LED_BRIGHTNESS);
-
   fill_solid(leds, NUM_LEDS, CRGB::Black);
   FastLED.show();
+  Serial.println("[SETUP] FastLED initialized");
 
   // -------------------------
   // I2S
   // -------------------------
 
+  Serial.println("[SETUP] Initializing I2S with ESP_I2S library...");
   I2S.setPins(
     I2S_BCLK,
     I2S_WS,
@@ -92,19 +112,17 @@ void setup() {
         I2S_STD_SLOT_LEFT
       )) {
 
-    Serial.println("I2S ERROR");
-
+    Serial.println("[SETUP] I2S ERROR - Init failed");
+    fill_solid(leds, 10, CRGB::Red);
+    FastLED.show();
     while (true) {
       delay(1000);
     }
   }
 
+  Serial.println("[SETUP] I2S initialized successfully");
+  Serial.println("[SETUP] System Ready!");
   Serial.println();
-  Serial.println("================================");
-  Serial.println("I2S + FASTLED READY");
-  Serial.println("================================");
-  Serial.println();
-
   Serial.println("Commands:");
   Serial.println("  s 1.0   = sensitivity");
   Serial.println("  s 2.0   = more sensitive");
@@ -357,12 +375,14 @@ void loop() {
   // Debug
   // ---------------------------------------------------
 
-  Serial.print("Audio: ");
-  Serial.print((int)level);
-
-  Serial.print("  LED: ");
-  Serial.println((int)brightness);
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 500) {
+    Serial.print("Audio: ");
+    Serial.print((int)level);
+    Serial.print("  LED: ");
+    Serial.println((int)brightness);
+    lastPrint = millis();
+  }
 
   delay(15);
 }
-

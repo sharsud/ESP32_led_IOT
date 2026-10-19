@@ -470,6 +470,11 @@
                 <option value="34">Audio Frequency VU Meter</option>
                 <option value="35">Audio Reactive Solid Pulses</option>
                 <option value="36">Audio Dual Tone Visualizer</option>
+                <option value="37">Beat Sync Pulse</option>
+                <option value="38">Peak Hold Meter</option>
+                <option value="39">Audio Ripple (Center Outward)</option>
+                <option value="40">Audio Pulse Ring (Expanding)</option>
+                <option value="41">Audio Starfield (Twinkling)</option>
             </optgroup>
         </select>
     </div>
@@ -528,6 +533,62 @@
             <span class="badge-val" id="audioSensVal">5</span>
         </div>
         <input type="range" id="audioSens" min="1" max="10" value="5" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card hidden" id="wrapperAudioTrigger">
+        <div class="control-header">
+            <span>Audio Trigger Level</span>
+            <span class="badge-val" id="audioTriggerVal">80000</span>
+        </div>
+        <input type="range" id="audioTrigger" min="10000" max="200000" value="80000" step="1000" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card hidden" id="wrapperAudioMax">
+        <div class="control-header">
+            <span>Audio Max Level</span>
+            <span class="badge-val" id="audioMaxVal">1000000</span>
+        </div>
+        <input type="range" id="audioMax" min="500000" max="2000000" value="1000000" step="10000" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card hidden" id="wrapperAudioSensitivity">
+        <div class="control-header">
+            <span>Audio Sensitivity Multiplier</span>
+            <span class="badge-val" id="audioSensitivityVal">1.0</span>
+        </div>
+        <input type="range" id="audioSensitivity" min="0.1" max="5.0" value="1.0" step="0.1" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card hidden" id="wrapperAttack">
+        <div class="control-header">
+            <span>Attack Speed (Response)</span>
+            <span class="badge-val" id="attackVal">0.50</span>
+        </div>
+        <input type="range" id="attack" min="0.1" max="1.0" value="0.5" step="0.05" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card hidden" id="wrapperRelease">
+        <div class="control-header">
+            <span>Release Speed (Fade)</span>
+            <span class="badge-val" id="releaseVal">0.06</span>
+        </div>
+        <input type="range" id="release" min="0.01" max="0.3" value="0.06" step="0.01" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card hidden" id="wrapperPeakDecay">
+        <div class="control-header">
+            <span>Peak Decay Rate</span>
+            <span class="badge-val" id="peakDecayVal">0.985</span>
+        </div>
+        <input type="range" id="peakDecay" min="0.900" max="0.999" value="0.985" step="0.001" oninput="dispatchParameters()">
+    </div>
+
+    <div class="control-card hidden" id="wrapperBPM">
+        <div class="control-header">
+            <span>Detected BPM</span>
+            <span class="badge-val" id="bpmVal">0</span>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 700;">Auto-detected from audio</div>
     </div>
 
     <footer>
@@ -657,6 +718,10 @@
             console.log("WebSocket engine channel successfully bound.");
             clearInterval(reconnectInterval);
             reconnectInterval = null;
+            const badge = document.getElementById('statusBadge');
+            badge.innerText = "● CONNECTED";
+            badge.style.background = "#1c3d27";
+            badge.style.color = "#38a169";
         };
 
         socket.onmessage = (event) => {
@@ -679,6 +744,13 @@
                 if(document.getElementById('density'))    document.getElementById('density').value = data.density;
                 if(document.getElementById('numLeds'))    document.getElementById('numLeds').value = data.numLeds;
                 if(document.getElementById('audioSens'))  document.getElementById('audioSens').value = data.audioSens;
+                if(document.getElementById('audioTrigger')) document.getElementById('audioTrigger').value = data.t || 80000;
+                if(document.getElementById('audioMax'))    document.getElementById('audioMax').value = data.m || 1000000;
+                if(document.getElementById('audioSensitivity')) document.getElementById('audioSensitivity').value = data.sensMult || 1.0;
+                if(document.getElementById('attack')) document.getElementById('attack').value = data.attack || 0.5;
+                if(document.getElementById('release')) document.getElementById('release').value = data.release || 0.06;
+                if(document.getElementById('peakDecay')) document.getElementById('peakDecay').value = data.peakDecay || 0.985;
+                if(document.getElementById('bpmVal')) document.getElementById('bpmVal').innerText = Math.round(data.bpm || 0);
 
                 // Sync Hex target swatches directly
                 if(document.getElementById('picker')) {
@@ -698,14 +770,22 @@
 			badge.innerText = "▼ DISCONNECTED";
 			badge.style.background = "#4a1d1d";
 			badge.style.color = "#e53e3e";
-			
+
+			console.log("WebSocket closed. Will reconnect in 4 seconds...");
+
 			// 2. Trigger the auto-reconnect polling loop
 			if (!reconnectInterval) {
 				reconnectInterval = setInterval(initiateWebSocket, 4000);
 			}
 		};
 
-        socket.onerror = (err) => { console.error("Socket error encountered:", err); };
+        socket.onerror = (err) => {
+            console.error("Socket error encountered:", err);
+            const badge = document.getElementById('statusBadge');
+            badge.innerText = "✗ CONNECTION ERROR";
+            badge.style.background = "#4a1d1d";
+            badge.style.color = "#e53e3e";
+        };
     }
 
     function toggleSystemPower() {
@@ -730,7 +810,7 @@
     // Fixed: Now processes inputs dynamically using the non-blocking throttling helper
     function dispatchParameters() {
         updateDisplayStrings();
-        
+
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
 
         var pStr = parseInt(document.getElementById('pattern').value);
@@ -745,10 +825,29 @@
         var g = parseInt(colorHex.substring(3,5), 16);
         var b = parseInt(colorHex.substring(5,7), 16);
 
-        // Dispatched safely to insulate the Async Web Server memory buffers
-        sendThrottledData({
+        // Base payload
+        var payload = {
             p: pStr, br: bStr, num: nStr, s: sStr, d: dStr, sens: sensStr, r: r, g: g, bl: b
-        });
+        };
+
+        // Audio parameters (only for audio patterns 34-41)
+        if (pStr >= 34 && pStr <= 41) {
+            var tStr = parseFloat(document.getElementById('audioTrigger').value);
+            var mStr = parseFloat(document.getElementById('audioMax').value);
+            var sVal = parseFloat(document.getElementById('audioSensitivity').value);
+            var attackVal = parseFloat(document.getElementById('attack').value);
+            var releaseVal = parseFloat(document.getElementById('release').value);
+            var peakDecayVal = parseFloat(document.getElementById('peakDecay').value);
+            payload.t = tStr;
+            payload.m = mStr;
+            payload.sensMult = sVal;
+            payload.attack = attackVal;
+            payload.release = releaseVal;
+            payload.peakDecay = peakDecayVal;
+        }
+
+        // Dispatched safely to insulate the Async Web Server memory buffers
+        sendThrottledData(payload);
     }
 
     function updateDisplayStrings() {
@@ -764,7 +863,14 @@
         if(document.getElementById('speedVal'))      document.getElementById('speedVal').innerText = sStr;
         if(document.getElementById('densityVal'))    document.getElementById('densityVal').innerText = dStr;
         if(document.getElementById('audioSensVal'))  document.getElementById('audioSensVal').innerText = sensStr;
-        
+
+        if(document.getElementById('audioTriggerVal')) document.getElementById('audioTriggerVal').innerText = document.getElementById('audioTrigger').value;
+        if(document.getElementById('audioMaxVal'))    document.getElementById('audioMaxVal').innerText = document.getElementById('audioMax').value;
+        if(document.getElementById('audioSensitivityVal')) document.getElementById('audioSensitivityVal').innerText = document.getElementById('audioSensitivity').value;
+        if(document.getElementById('attackVal')) document.getElementById('attackVal').innerText = document.getElementById('attack').value;
+        if(document.getElementById('releaseVal')) document.getElementById('releaseVal').innerText = document.getElementById('release').value;
+        if(document.getElementById('peakDecayVal')) document.getElementById('peakDecayVal').innerText = document.getElementById('peakDecay').value;
+
         if(document.getElementById('colorVal')) {
             const colorLabel = document.getElementById('colorVal');
             colorLabel.innerText = colorHex.toUpperCase();
@@ -783,11 +889,25 @@
         var cardSpeed = document.getElementById('wrapperSpeed');
         var cardDensity = document.getElementById('wrapperDensity');
         var cardSens = document.getElementById('wrapperAudioSens');
+        var cardTrigger = document.getElementById('wrapperAudioTrigger');
+        var cardMax = document.getElementById('wrapperAudioMax');
+        var cardSensitivity = document.getElementById('wrapperAudioSensitivity');
+        var cardAttack = document.getElementById('wrapperAttack');
+        var cardRelease = document.getElementById('wrapperRelease');
+        var cardPeakDecay = document.getElementById('wrapperPeakDecay');
+        var cardBPM = document.getElementById('wrapperBPM');
 
         cardColor.classList.add('hidden');
         cardSpeed.classList.add('hidden');
         cardDensity.classList.add('hidden');
         cardSens.classList.add('hidden');
+        cardTrigger.classList.add('hidden');
+        cardMax.classList.add('hidden');
+        cardSensitivity.classList.add('hidden');
+        cardAttack.classList.add('hidden');
+        cardRelease.classList.add('hidden');
+        cardPeakDecay.classList.add('hidden');
+        cardBPM.classList.add('hidden');
 
         var patternsUsingColor = [0, 16, 17, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36];
         if (patternsUsingColor.includes(patternId)) { cardColor.classList.remove('hidden'); }
@@ -795,9 +915,16 @@
         if ((patternId >= 1 && patternId <= 15) || (patternId >= 18 && patternId <= 33) || patternId === 16 || patternId === 17) {
             cardDensity.classList.remove('hidden');
         }
-        if (patternId >= 34 && patternId <= 36) {
+        if (patternId >= 34 && patternId <= 41) {
             cardSpeed.classList.remove('hidden');
             cardSens.classList.remove('hidden');
+            cardTrigger.classList.remove('hidden');
+            cardMax.classList.remove('hidden');
+            cardSensitivity.classList.remove('hidden');
+            cardAttack.classList.remove('hidden');
+            cardRelease.classList.remove('hidden');
+            cardPeakDecay.classList.remove('hidden');
+            cardBPM.classList.remove('hidden');
         }
     }
 
